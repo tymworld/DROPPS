@@ -1,0 +1,18 @@
+# Original HPS forcefield for slab simulation
+
+[ residue-type ]
+#   abbr    name    sigma     lambda  mass          charges
+    a       ADE     0.844    -0.054   329.200      -1.0
+    c       CYT     0.822    -0.027   305.200      -1.0
+    g       GUA     0.851    -0.189   345.200      -1.0
+    u       URA     0.822    -0.027   306.200      -1.0
+
+[ bond ]
+# bond_name
+  RNABond
+# bond_length  k 
+  0.50         1000
+# Terminal-1-residue
+a c g u
+# Terminal-2-residue
+a c g u

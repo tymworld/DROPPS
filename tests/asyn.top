@@ -1,0 +1,7 @@
+
+[ itp files ]
+asyn-angle.itp
+
+[ system ]
+# molecule   number
+  asyn       64

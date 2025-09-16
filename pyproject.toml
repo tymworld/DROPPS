@@ -1,0 +1,22 @@
+[project]
+name = "dropps"
+version = "0.1.0"
+description = "Distributed Rapid Operation Platform for Phase-separation Simulations"
+authors = [
+    {name = "Yiming Tang",email = "ymtang@fudan.edu.cn"}
+]
+license = {text = "Proprietary"}
+license-files = ["LICENSE"]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy (==1.26.4)",
+    "openmm (==8.1.1)",
+    "MDAnalysis (==2.9.0)",
+    "tqdm (>4.67)",
+    "bio (==1.8.0)"
+]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

@@ -1,0 +1,72 @@
+# Template parameter file for MD simulation
+
+# Integration
+integrator  = Langevin       # Allowed values: Langevin, steep
+friction    = 1.0            # Friction in picosecond ^ -1
+dt          = 0.01           # Integration time step in ps
+nsteps      = 5000000        # Number of steps to integrate 
+minimize    = True           # Perform constant volume minimization before this simulation
+max_step    = 100000         # Maximum number of steps to perform energy minimization
+seed        = 1215           # Seed for starting the simulation
+
+comm-mode   = Linear         # Allowed values: Linear (Remove center of mass translational velocity), none.
+nstcomm     = 100            # interval for center of mass motion removal
+
+bondtype    = bond           # Treat bond as: bond or constraint
+
+# Energy minimization
+# energytol       = 10.0      # The minimization is converged when the maximum energy is smaller than this value
+forcetol        = 100         # The minimization is converged when the maximum force is smaller than this value
+
+# Output control
+nst-xout     = 10000           # Number of steps that elapse between writing coordinates to the output trajectory file
+nst-cp       = 10000          # Number of steps that elapse between writing checkpoint
+
+nst-screenlog = 100000  # Number of steps that elapse between writing properties to screen, 0 for write nothing.
+nst-filelog = 10000   # Number of steps that elapse between writing properties to logfile, 0 for write nothing.
+screenlog-grps = step,elapsedTime,remainingTime,speed,progress   # Write these properties to log file.
+filelog-grps = step,potentialEnergy,kineticEnergy      # Write these properties to log file.
+
+# Allowed logger: 
+# step: current step index
+# time: current time
+# potentialEnergy: potential energy
+# kineticEnergy: kinetic energy
+# totalEnergy: total energy
+# temperature: instantaneous temperature
+# volume: periodic box volume
+# density: system density
+# progress: current progress (percent completion). 
+# remainingTime: estimate of the remaining clock time until completion. 
+# speed: estimate of the simulation speed in ns/day
+# elapsedTime: elapsed time of the simulation in seconds.
+
+# nstvout     = 10000          # Number of steps that elapse between writing velocity to the output trajectory file
+
+# Neighbor searching
+nstlist     = 10       # Frequency to update the neighbor list
+
+#cutoff-scheme-lj    = static  # dynamic (lj-multi   * sigma) or static (cutoff-lj)
+#cutoff-scheme-coul  = static  # dynamic (coul-multi * sigma) or static (cutoff-coul)
+#cutoff-lj-multi = 3.0         # Appliable only when cutoff-scheme-lj = dynamic
+#cutoff-coul-multi = 3.0       # Appliable only when cutoff-scheme-coul = dynamic
+cutoff-lj   = 1.5      # Default cutoff value for LJ interaction,      only when cutoff-scheme-lj = static
+cutoff-coul = 1.5      # Default cutoff value for Coulomb interaction, only when cutoff-scheme-coul = static
+buffer      = 0.5      # Buffer for neighbor searching
+
+# Force calculations
+coulombtype = yukawa   # Method to calculate Coulomb interaction. Allowed values: yukawa,no
+vdwtype     = pLJ      # Method to calculate vdw interactions. Allowed values: pLJ,none pLJ is perturbed LJ
+salt_conc   = 0.1      # Salt concentration in mol/L
+
+# Temperature coupling
+tcoulp                  = Bussi    # Method to perform temperature coupling. Allowed values: Bussi,no. Currently only Bussi is allowed. 
+production-temperature  = 300      # The ensemble temperature for the system.
+gen-vel                 = True     # Randomly generate velocity according to init-temperature 
+initial-temperature     = 150      # The ensemble temperature for the system.
+warming-speed           = 100      # Speed of temperature climbing if production temperature > initial temperature, in K/ns
+
+# Pressure coupling
+pcoulp   = False     # Whether to perform pressure coupling
+ref-P    = 1        # The reference pressure for coupling, in bar.
+tau-P    = 5        # Frequency at which Monte Carlo pressure changes should be attempted (in time steps)

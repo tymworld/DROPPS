@@ -1,0 +1,43 @@
+# Original HPS forcefield for slab simulation
+
+[ residue-type ]
+#   abbr    name    sigma     lambda  mass          charges
+    H       HIS     0.608     0.514   137.100       0.5
+    R       ARG     0.656     0.000   156.200       1.0
+    K       LYS     0.636     0.514   128.200       1.0
+    I       ILE     0.618     0.973   113.200       0.0
+    F       PHE     0.618     1.000   147.200       0.0
+    L       LEU     0.618     0.973   113.200       0.0
+    W       TRP     0.678     0.946   186.200       0.0
+    A       ALA     0.504     0.730    71.080       0.0
+    M       MET     0.618     0.838   131.200       0.0
+    P       PRO     0.556     1.000    97.120       0.0
+    C       CYS     0.548     0.595   103.100       0.0
+    N       ASN     0.568     0.432   114.100       0.0
+    V       VAL     0.586     0.892    99.070       0.0
+    G       GLY     0.450     0.649    57.050       0.0
+    S       SER     0.518     0.595    87.080       0.0
+    Q       GLN     0.602     0.514   128.100       0.0
+    Y       TYR     0.646     0.865   163.200       0.0
+    D       ASP     0.558     0.378   115.100      -1.0
+    E       GLU     0.592     0.459   129.100      -1.0
+    T       THR     0.562     0.676   101.100       0.0
+
+[ residue-ptm ]
+#   abbr    name      sigma     lambda  mass          charges
+    SP      SER_Phos  0.636     0.162   87.080       -2.0
+    TP      THR_Phos  0.662     0.0081  179.05       -2.0
+    YP      TYR_Phos  0.738     0.189   241.15       -2.0
+    KA      LYS_Ace   0.681     0.7567  170.20        0.0
+    KL      LYS_Lac   0.902     0.730   227.237       0.0
+
+[ bond ]
+# bond_name
+  HPSBond
+# bond_length  k 
+  0.38         1000
+# Terminal-1-residue
+H R K I F L W A M P C N V G S Q Y D E T SP TP YP KA KL
+# Terminal-2-residue
+H R K I F L W A M P C N V G S Q Y D E T SP TP YP KA KL
+
