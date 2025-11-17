@@ -63,7 +63,7 @@ class ITPTopology():
             self.bonds = None
         
         if "angles" in data.keys():
-            self.angles = [Angle(angle["i"] - 1, angle["j"] - 1, angle["j"] - 1, angle["theta_in_degree"], angle["force"])
+            self.angles = [Angle(angle["i"] - 1, angle["j"] - 1, angle["k"] - 1, angle["theta_in_degree"], angle["force"])
                 for angle in data["angles"]
             ]
         else:

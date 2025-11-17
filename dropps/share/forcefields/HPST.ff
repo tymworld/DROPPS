@@ -25,7 +25,7 @@
 
 [ residue-ptm ]
 #   abbr    name      sigma     lambda  mass          charges
-    SP      SER_Phos  0.636     0.162   87.080       -2.0
+    SP      SER_Phos  0.636     0.162   165.03       -2.0
     TP      THR_Phos  0.662     0.0081  179.05       -2.0
     YP      TYR_Phos  0.738     0.189   241.15       -2.0
     KA      LYS_Ace   0.681     0.7567  170.20        0.0

@@ -111,17 +111,27 @@ def pdb2cgps(args):
             print(f"{idx}: {f.name}")
 
         # Let user select
-        while True:
-            try:
-                choice = int(input("Select a file by index: "))
-                if 1 <= choice <= len(all_files):
-                    break
-                else:
-                    print("Invalid choice. Try again.")
-            except ValueError:
-                print("Please enter a valid integer.")
 
-        selected_file_path = all_files[choice - 1]
+        if args.forcefield is not None:
+            filenames = [file for file in all_files if os.path.basename(file) == args.forcefield + ".ff"]
+
+            if len(filenames) == 0:
+                print(f"ERROR: Unknown forcefield {args.forcefield}.")
+                quit()
+            selected_file_path = Path(filenames[0])
+        else:
+
+            while True:
+                try:
+                    choice = int(input("Select a file by index: "))
+                    if 1 <= choice <= len(all_files):
+                        break
+                    else:
+                        print("Invalid choice. Try again.")
+                except ValueError:
+                    print("Please enter a valid integer.")
+
+            selected_file_path = all_files[choice - 1]
         print(f"## Selected forcefield: {selected_file_path.name}")
 
         # Save path in parameter
@@ -344,8 +354,7 @@ def getargs_pdb2cgps(argv):
                         default=1)
     parser.add_argument('-e', '--degree-extend', type=float, help="Degree of extend for generated chain (0~1)",
                         default = 0.5)
-    parser.add_argument('-ff', '--forcefield', choices=forcefield_list, help="Forcefield selection",
-                        default='HPS')
+    parser.add_argument('-ff', '--forcefield', choices=forcefield_list, help="Forcefield selection")
     parser.add_argument('-oc', '--output-conformation', type=str, help="File prefix to write output configuration",
                         required=False)
     parser.add_argument('-op', '--output-topology', type=str, help="File prefix to write topology file",

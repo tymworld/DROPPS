@@ -185,11 +185,12 @@ def contactmap(args):
     # We check chains
     chain_length_list_reference = [len(chain) for chain in reference_chains]
     chain_length_list_selection = [len(chain) for chain in selection_chains]
+
     
-    if set(chain_length_list_reference) != 1:
+    if len(set(chain_length_list_reference)) != 1:
         print(f"ERROR: Chains in reference groups are not same in length.")
         quit()
-    if set(chain_length_list_selection) != 1:
+    if len(set(chain_length_list_selection)) != 1:
         print(f"ERROR: Chains in selection groups are not same in length.")
         quit()
     
@@ -206,11 +207,9 @@ def contactmap(args):
     if np.array_equal(c1, c2):
         print(f"## WARNING: Reference and selection groups are identical.")
     
-    if np.array_equal(c1, c2) and np.intersect1d(c1, c2).size > 0:
-        print(f"ERROR: Reference and selection groups are overlapping but not identical. Please check.")
-        quit()
-
     # We start calculation
+
+    print(f"## We will not start calculating.")
 
     contact_map = np.zeros((trajectory.num_atoms(), trajectory.num_atoms()))
 

@@ -149,9 +149,9 @@ def density(args):
         print(f"YOU MUST BE KIDDING ME.")
         quit()
 
-    start_frame = int((start_time - trajectory.time_init()).value_in_unit(picosecond) / trajectory.time_step())
-    end_frame = int((end_time - trajectory.time_init()).value_in_unit(picosecond) / trajectory.time_step())
-    center_interval_frame = int(center_interval_time.value_in_unit(picosecond) / trajectory.time_step())
+    start_frame = int((start_time - trajectory.time_init()).value_in_unit(picosecond) / trajectory.time_step().value_in_unit(picosecond))
+    end_frame = int((end_time - trajectory.time_init()).value_in_unit(picosecond) / trajectory.time_step().value_in_unit(picosecond))
+    center_interval_frame = int(center_interval_time.value_in_unit(picosecond) / trajectory.time_step().value_in_unit(picosecond))
 
     print(f"## Will use time {start_time} to {end_time} with recentering interval of {center_interval_time}.")
     print(f"## Will use frame {start_frame} to {end_frame} with recentering interval of {center_interval_frame}.")

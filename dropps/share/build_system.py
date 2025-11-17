@@ -4,7 +4,7 @@ from dropps.fileio.itp_reader import read_itp
 from dropps.fileio.pdb_reader import read_pdb
 import openmm
 import openmm.app
-from openmm.unit import nanometer, kilojoule_per_mole, moles, liter, kilocalorie_per_mole
+from openmm.unit import nanometer, kilojoule_per_mole, moles, liter, kilocalorie_per_mole, radian
 import math
 import copy
 
@@ -202,8 +202,12 @@ def build_system(pdb_file, top_file, parameters):
         for id, top in enumerate(topology_list):
             addition = addition_per_molecule[id]
             if top.angles is not None:
+
                 for angle in top.angles:
-                    angle_force.addAngle(angle.a1 + addition, angle.a2 + addition, angle.a3 + addition, angle.theta_in_degree, angle.k)
+
+                    angle_force.addAngle(angle.a1 + addition, angle.a2 + addition, angle.a3 + addition, 
+                                         angle.theta_in_degree.value_in_unit(radian)
+                                         , angle.k.value_in_unit(kilojoule_per_mole / radian**2))
         
         mdsystem.addForce(angle_force)
 
@@ -331,11 +335,11 @@ def build_system(pdb_file, top_file, parameters):
 
         for id, top in enumerate(topology_list):
             for atom in top.atoms:
-                sigma = atomtypes_dict[atom.abbr].sigma + atomtypes_dict[atom.abbr].T0 \
+                mylambda = atomtypes_dict[atom.abbr].mylambda + atomtypes_dict[atom.abbr].T0 \
                       + atomtypes_dict[atom.abbr].T1 * temperature \
                       + atomtypes_dict[atom.abbr].T2 * temperature * temperature
 
-                lj_force.addParticle([sigma, atomtypes_dict[atom.abbr].mylambda])
+                lj_force.addParticle([atomtypes_dict[atom.abbr].sigma, mylambda])
 
         lj_force.setForceGroup(1)
         

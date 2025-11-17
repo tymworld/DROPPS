@@ -13,7 +13,7 @@ def printcolor(text, success):
 
 class trajectory_class():
 
-    def __init__(self, tpr_path, index_path = None, xtc_path = None):
+    def __init__(self, tpr_path, index_path = None, trajectory_path = None):
 
         self.tpr = read_tpr(tpr_path)
         self.topology = self.tpr.mdtopology
@@ -42,9 +42,9 @@ class trajectory_class():
             self.index.load_ndx(index_path)
             print(f"## Known index entries loaded from {index_path}.")
         
-        if xtc_path is not None:
-            self.Universe.load_new(xtc_path)
-            print(f"## Loaded trajectory file {xtc_path} into Universe.")
+        if trajectory_path is not None:
+            self.Universe.load_new(trajectory_path)
+            print(f"## Loaded trajectory file {trajectory_path} into Universe.")
         
         # We generate information for each atoms.
         self.id2charge = charges

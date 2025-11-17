@@ -30,6 +30,9 @@ def getargs_extract(argv):
     parser.add_argument('-sel', '--selection', type=int, nargs='+',
                         help="Groups of atoms to output")
     
+    parser.add_argument('-pbc', '--pbc', type=str, choices=["mol", "atom"], default="mol",
+                        help="Mol means make all molecules whole, atom means put all atoms in the box.")
+    
     parser.add_argument('-t', '--time', type=int,
                         help="Time (ns) of the frame to extract.")
     
@@ -71,6 +74,16 @@ def extract(args):
     y = coordinates[:,1]/ 10.0
     z = coordinates[:,2]/ 10.0
 
+    if args.pbc == "mol":
+        print(f"## Molecules will be made whole.")
+    elif args.pbc == "atom":
+        print(f"## Atoms will be put inside the simulation box.")
+        def apply_pbc(coords, box_size):
+            return [coord % box_size if coord >= 0 else (coord % box_size + box_size) % box_size
+                    for i, coord in enumerate(coords)]
+        x = apply_pbc(x, box_size[0])
+        y = apply_pbc(y, box_size[1])
+        z = apply_pbc(z, box_size[2])
 
     pdb_raw = trajectory.tpr.pdb_raw
 

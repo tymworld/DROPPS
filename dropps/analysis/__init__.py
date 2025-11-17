@@ -8,3 +8,4 @@ from .inter_distance import inter_distance_commands
 from .intra_distance import intra_distance_commands
 from .make_ndx import make_ndx_commands
 from .extract import extract_commands
+from .msd import msd_commands

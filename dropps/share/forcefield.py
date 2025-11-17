@@ -5,13 +5,13 @@ from pathlib import Path
 import re
 
 forcefields_directory = Path(os.path.dirname(os.path.abspath(__file__)), "forcefields")
-forcefields_files = glob.glob(f"{forcefields_directory}/ff_*.ff")
-pattern = r'ff_(.*?)\.ff'
-forcefield_list = [re.search(pattern, path).group(1) for path in forcefields_files]
+forcefields_files = glob.glob(f"{forcefields_directory}/*.ff")
+pattern = r'(.*?)\.ff'
+forcefield_list = [os.path.basename(re.search(pattern, path).group(1)) for path in forcefields_files]
 
 class forcefield_top:
     def __init__(self, abbr, abbr2aa, abbr2original, abbr2sigma, abbr2lambda, abbr2mass, abbr2charge, abbr2tempcoff,
-                 bondtypes, abbr2bondtypeindex, bond2param):
+                 bondtypes, abbr2bondtypeindex, bond2param, modifications):
         self.abbr = abbr
         self.abbr2aa = abbr2aa
         self.abbr2original = abbr2original
@@ -24,6 +24,7 @@ class forcefield_top:
         self.abbr2bondtypeindex = abbr2bondtypeindex
         self.abbr2bondtype = {abbr:self.bondtypes[self.abbr2bondtypeindex[abbr]] for abbr in self.abbr2bondtypeindex.keys()}
         self.bond2param = bond2param
+        self.modifications = modifications
 
 def read_and_split_sections(filename):
     sections = {}
@@ -73,6 +74,7 @@ def getff(parameter_file_path):
     abbr2mass = {}
     abbr2charge = {}
     abbr2tempcoff = {}
+    modifications = {}
 
     # Check whether there is temperature coefficients
     temperature_coeff = dict()
@@ -113,7 +115,7 @@ def getff(parameter_file_path):
                                         deepcopy(temperature_coeff[line_abbr][1]), 
                                         deepcopy(temperature_coeff[line_abbr][2])]
         else:
-            print(f"## No temperature coefficient for residue {line_abbr} which will be set as 0,0,0.")
+            #print(f"## No temperature coefficient for residue {line_abbr} which will be set as 0,0,0.")
             abbr2tempcoff[line_abbr] = [0,0,0]
     
     # Iterate over lines in the 'residue_ptm' section to get residue information
@@ -139,8 +141,28 @@ def getff(parameter_file_path):
                     deepcopy(temperature_coeff[line_abbr][1]), 
                     deepcopy(temperature_coeff[line_abbr][2])]
             else:
-                print(f"## No temperature coefficient for residue {line_abbr} which will be set as 0,0,0.")
+                #print(f"## No temperature coefficient for residue {line_abbr} which will be set as 0,0,0.")
                 abbr2tempcoff[line_abbr] = [0,0,0]
+
+    # Iterate over lines in the 'residue_modification' section to get modification information
+    if 'residue_modification' in sections:
+        for line in sections['residue_modification']:
+            parts = line.strip().split()
+            line_original = parts[0]
+            line_abbr = parts[1]
+            line_aa = parts[2]
+            line_sigmas = [float(number) for number in parts[3].split(',')]
+            line_lambdas = [float(number) for number in parts[4].split(',')]
+            line_masses = [float(number) for number in parts[5].split(',')]
+            line_charges = [float(number) for number in parts[6].split(',')]
+            line_bond_length = float(parts[7])
+            line_bond_k = float(parts[8])
+            line_angle_thetas = [float(number) for number in parts[9].split(',')]
+            line_angle_ks = [float(number) for number in parts[10].split(',')]
+            modifications[line_abbr] = [line_original, line_abbr, line_aa,
+                                        line_sigmas, line_lambdas, line_masses,
+                                        line_charges, line_bond_length, line_bond_k,
+                                        line_angle_thetas, line_angle_ks]
     
     # Iterate over each residue in abbr to get N and C terminal patch version
     for abbr_single in deepcopy(abbr):
@@ -160,12 +182,12 @@ def getff(parameter_file_path):
         abbr2lambda[abbr_single + '_C'] = abbr2lambda[abbr_single]
         abbr2mass[abbr_single + '_C'] = abbr2mass[abbr_single]
         abbr2charge[abbr_single + '_C'] = abbr2charge[abbr_single] - 1.0
-        abbr2tempcoff[abbr_single + '_N'] = [deepcopy(abbr2tempcoff[line_abbr][0]),
-                deepcopy(abbr2tempcoff[line_abbr][1]), 
-                deepcopy(abbr2tempcoff[line_abbr][2])]
-        abbr2tempcoff[abbr_single + '_C'] = [deepcopy(abbr2tempcoff[line_abbr][0]),
-                deepcopy(abbr2tempcoff[line_abbr][1]), 
-                deepcopy(abbr2tempcoff[line_abbr][2])]
+        abbr2tempcoff[abbr_single + '_N'] = [deepcopy(abbr2tempcoff[abbr_single][0]),
+                deepcopy(abbr2tempcoff[abbr_single][1]), 
+                deepcopy(abbr2tempcoff[abbr_single][2])]
+        abbr2tempcoff[abbr_single + '_C'] = [deepcopy(abbr2tempcoff[abbr_single][0]),
+                deepcopy(abbr2tempcoff[abbr_single][1]), 
+                deepcopy(abbr2tempcoff[abbr_single][2])]
 
 
 
@@ -213,7 +235,7 @@ def getff(parameter_file_path):
 
     return forcefield_top(abbr, abbr2aa, abbr2original, abbr2sigma, abbr2lambda, 
                           abbr2mass, abbr2charge, abbr2tempcoff,
-                          bondtypes, abbr2bondtypeindex, bond2param)
+                          bondtypes, abbr2bondtypeindex, bond2param, modifications)
     
 
 if __name__ == '__main__':
