@@ -51,6 +51,9 @@ class ITPTopology():
                                    singletype["T0"], singletype["T1"], singletype["T2"])
                           for singletype in data["atomtypes"]]
         
+        self.type2sigma = {atomtype.abbr: atomtype.sigma for atomtype in self.atomtypes}
+        self.type2mylambda = {atomtype.abbr: atomtype.mylambda for atomtype in self.atomtypes}
+        
         self.atoms = [Atom(atom["abbr"],atom["name"],atom["residue"],atom["residueid"],atom["mass"],atom["charge"])
             for atom in data["atoms"]
         ]

@@ -4,6 +4,9 @@ from openmm.unit import nanometer, picosecond, nanosecond
 
 from dropps.fileio.tpr_reader import read_tpr
 from dropps.share.indexing import indexGroups
+from tqdm import tqdm
+
+from os.path import splitext
 
 def printcolor(text, success):
     if success:
@@ -29,6 +32,11 @@ class trajectory_class():
 
         charges = [atom.charge for itp in self.tpr.itp_list for atom in itp.atoms]
         masses = [atom.mass for itp in self.tpr.itp_list for atom in itp.atoms]
+        sigmas = [itp.type2sigma[atom.abbr] for itp in self.tpr.itp_list for atom in itp.atoms]
+        mylambdas = [itp.type2mylambda[atom.abbr] for itp in self.tpr.itp_list for atom in itp.atoms]
+        
+        self.mylambdas = mylambdas
+        self.sigmas = sigmas
 
         self.Universe.add_TopologyAttr("charges", charges)
         self.Universe.add_TopologyAttr("masses", masses)
@@ -43,8 +51,17 @@ class trajectory_class():
             print(f"## Known index entries loaded from {index_path}.")
         
         if trajectory_path is not None:
-            self.Universe.load_new(trajectory_path)
-            print(f"## Loaded trajectory file {trajectory_path} into Universe.")
+
+            file_extention = splitext(trajectory_path)[1].lower()
+
+            if file_extention == ".xtc":
+                self.Universe.load_new(trajectory_path)
+                print(f"## Loaded trajectory file {trajectory_path} into Universe.")
+                print(f"## Assuming trajectory file in unit angstrom")
+
+            else:
+                print(f"## ERROR: Known file extention of {trajectory_path}.")
+                quit()
         
         # We generate information for each atoms.
         self.id2charge = charges
@@ -53,6 +70,7 @@ class trajectory_class():
         chain_length_list = [len(itp.atoms) for itp in self.tpr.itp_list]
         self.id2chainID = [i for i, length in enumerate(chain_length_list) for _ in range(length)]
         self.id2resID = [atom.residueid for itp in self.tpr.itp_list for atom in itp.atoms]
+        print(self.Universe.trajectory[0])
     
     def get_chainID(self, index):
         if index < 0 or index > self.num_atoms():

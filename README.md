@@ -4,6 +4,36 @@
 
 ---
 
+## Distributions
+
+### V0.3.0
+#### Add: 
+- dps gsd2xtc command which converts gsd to xtc file.
+- dps cmap now allows global and residue specific contacts.
+- dps trjconv command which converts trajectory and treat pbc
+- Now trajectory tool allows gsd input
+
+#### Fix:
+- Fix contact cutoff unit issue in dps cmap
+
+#### Deprecated: 
+- dps contact command is deprecated because of unfixed bug.
+
+### V0.2.1
+#### Add:
+- Construction tool for multi-bead-per-residue forcefield
+- dps extract which extract a single frame
+
+#### Update:
+- MSD calculation program is updated
+
+#### Fix:
+- Fix misused sigma and lambda in HPS-T forcefield
+- Fix angle constraints
+- Parameter for PTM is fixed
+
+---
+
 ## Overview
 
 **DROPPS** is a high-throughput, distributed framework designed for performing coarse-grained simulations of protein and biomolecular phase separation. It provides an efficient, scalable, and user-friendly platform to explore the phase behavior of intrinsically disordered proteins, protein condensates, and other biomolecular systems.

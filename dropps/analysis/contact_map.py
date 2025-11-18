@@ -5,6 +5,7 @@ from argparse import ArgumentParser
 from dropps.share.trajectory import trajectory_class
 from dropps.fileio.filename_control import validate_extension
 from dropps.fileio.xpm_reader import write_xpm
+from dropps.share.forcefield import getff, forcefield_list
 
 from tqdm import tqdm
 import numpy as np
@@ -17,6 +18,10 @@ from Bio import BiopythonDeprecationWarning
 warnings.filterwarnings("ignore", category=BiopythonDeprecationWarning)
 
 from MDAnalysis.transformations import unwrap
+
+from pathlib import Path
+import os
+
 
 prog = "cmap"
 desc = '''This program calculate contact map in a residue-level resolution.'''
@@ -40,8 +45,16 @@ def getargs_contactmap(argv):
     parser.add_argument('-sel', '--selection-group', type=int,
                         help="Selection group of atoms (y axis of the contact map).")
     
+    parser.add_argument('-cs', '--cutoff-scheme', type=str, choices=["global", "residue"], required=True,
+                        help="Scheme for determining inter-residue contacts.")
+    
     parser.add_argument('-c', '--cutoff', type=float, default=0.7,
-                        help="Cutoff distance for contact calculation.")
+                        help="Cutoff distance for contact calculation, unit is nanometer.")
+    
+    parser.add_argument('-cm', '--cutoff-multiplier', type=float, default=1.2,
+                        help="Factor which is multiplied to sigma value for residue-wise contact cutoff.")
+    
+    parser.add_argument('-ff', '--forcefield', choices=forcefield_list, help="Forcefield selection")
     
     parser.add_argument('-b', '--start-time', type=int,
                         help="Time (ns) of the first frame to calculate.")
@@ -116,7 +129,7 @@ def compute_contact_maps(contact_map, reference_chains, selection_chains):
     # Intra-chain contact map of selection
     for chain in selection_chains:
         intra_sel += contact_map[np.ix_(chain, chain)]
-    inter_sel /= n_sel
+    intra_sel /= n_sel
 
     # Inter-chain contact map between reference and selection
     if identical:
@@ -154,6 +167,86 @@ def contactmap(args):
     else:
         print(f"## WARNING: Distance will be calculated without periodic boundary conditions.")
 
+
+    # We determine cutoff scheme and generate cutoff distance vector
+
+    if args.cutoff_scheme == "global":
+        print(f"## Will use a glocal cutoff of {args.cutoff} nm.")
+        cutoff_vector = [args.cutoff * 10.0 for atom in range(trajectory.num_atoms())]
+
+    elif args.cutoff_scheme == "residue":
+        print(f"Will use a residue responsive cutoff will a sigma multiplier of {args.cutoff_multiplier}")
+        
+        current_file_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        forcefields_dir = Path(current_file_dir) / "share" / "forcefields"
+        files1 = list(forcefields_dir.glob("*.ff"))
+        cwd = Path.cwd()
+        files2 = list(cwd.glob("*.ff"))
+
+        # Get base names for conflict checking
+        names1 = set(f.name for f in files1)
+        names2 = set(f.name for f in files2)
+
+        # Check for conflicts
+        conflicts = names1 & names2
+        if conflicts:
+            print("ERROR: Conflict detected! The following .ff file(s) exist in both system and working directory:")
+            for name in conflicts:
+                print(f"  {name}")
+            quit()
+
+        # Combine and make a list of paths
+        all_files = files1 + files2
+
+        # Print basename list
+        if not all_files:
+            print("ERROR: No forcefields found.")
+            quit()
+        else:
+            print("## Available forcefields:")
+            for idx, f in enumerate(all_files, start=1):
+                print(f"{idx}: {f.name}")
+
+            # Let user select
+
+            if args.forcefield is not None:
+                filenames = [file for file in all_files if os.path.basename(file) == args.forcefield + ".ff"]
+
+                if len(filenames) == 0:
+                    print(f"ERROR: Unknown forcefield {args.forcefield}.")
+                    quit()
+                selected_file_path = Path(filenames[0])
+            else:
+
+                while True:
+                    try:
+                        choice = int(input("Select a file by index: "))
+                        if 1 <= choice <= len(all_files):
+                            break
+                        else:
+                            print("Invalid choice. Try again.")
+                    except ValueError:
+                        print("Please enter a valid integer.")
+
+                selected_file_path = all_files[choice - 1]
+            print(f"## Selected forcefield: {selected_file_path.name}")
+
+            # Save path in parameter
+            parameter_file_path = selected_file_path
+
+        forcefield = getff(parameter_file_path)
+
+        cutoff_vector = [args.cutoff_multiplier * sigma * 10.0 for sigma in trajectory.sigmas]
+
+    else:
+        print(f"ERROR: Cannot process cutoff scheme {args.cutoff_scheme}")
+        quit()
+    
+    cutoff_vector = np.array(cutoff_vector).astype(np.float32)
+    
+    cutoff_matrix = (cutoff_vector[:, None] + cutoff_vector) / 2
+    cutoff_matrix = np.round(cutoff_matrix, 4)
+
     # We treat time for analysis and generate frame for analysis
 
     start_frame, end_frame, interval_frame = trajectory.time2frame(args.start_time, args.end_time, args.delta_time)
@@ -185,7 +278,6 @@ def contactmap(args):
     # We check chains
     chain_length_list_reference = [len(chain) for chain in reference_chains]
     chain_length_list_selection = [len(chain) for chain in selection_chains]
-
     
     if len(set(chain_length_list_reference)) != 1:
         print(f"ERROR: Chains in reference groups are not same in length.")
@@ -214,13 +306,15 @@ def contactmap(args):
     contact_map = np.zeros((trajectory.num_atoms(), trajectory.num_atoms()))
 
     print(f"## Raw data will contains contact maps between {trajectory.num_atoms()}*{trajectory.num_atoms()} pairs.")
-    print(f"## Cutoff distance for contacts set as {args.cutoff}")
+    #print(f"## Cutoff distance for contacts set as {args.cutoff} nm")
     print(f"## Calculating for requested frames.")
 
     for frame_index in tqdm(frame_list):
+
         distance_map = distances.distance_array(trajectory.Universe.trajectory[frame_index], 
                                                 trajectory.Universe.trajectory[frame_index], trajectory.Universe.dimensions)
-        contact_map_temp = (distance_map < args.cutoff).astype(int)
+        
+        contact_map_temp = (distance_map < cutoff_matrix).astype(int)
         contact_map += contact_map_temp
 
     contact_map = contact_map / len(frame_list) 
@@ -250,7 +344,7 @@ def contactmap(args):
         filename = validate_extension(filename_raw, args.output_type)
         omatrix = output_dict[filename_raw]
         if args.output_type == "dat":
-            np.savetxt(filename, omatrix, fmt="%.3f", delimiter="\t")
+            np.savetxt(filename, omatrix, fmt="%.6f", delimiter="\t")
         if args.output_type == "xlsx":
             from pandas import DataFrame
             DataFrame(omatrix).to_excel(filename, index=False, header=False)
