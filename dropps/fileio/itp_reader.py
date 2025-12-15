@@ -1,7 +1,7 @@
 import re
 from collections import defaultdict
 
-from openmm.unit import kilojoule_per_mole, nanometer, atomic_mass_unit, degree
+from openmm.unit import kilojoule_per_mole, nanometer, atomic_mass_unit, degree, radian
 
 class Atomtype():
     def __init__(self, abbr, name, sigma, my_lambda, T0, T1, T2):
@@ -164,7 +164,7 @@ def read_itp(file_path):
                     "j": int(parts[1]),
                     "k": int(parts[2]),
                     "theta_in_degree": float(parts[3]) * degree,
-                    "force": float(parts[4]) * kilojoule_per_mole / degree ** 2
+                    "force": float(parts[4]) * kilojoule_per_mole / radian ** 2
                 }
                 parsed_data["angles"].append(angle_info)
 
@@ -218,12 +218,12 @@ def write_itp(file_path, topology:ITPTopology):
         # Write angle information
         if topology.angles is not None:
             itp_file.write(f"[ angles ]\n")
-            itp_file.write(f"; ai   aj   ak   theta/degree k/(kJ/mol)\n")
+            itp_file.write(f"; ai   aj   ak   theta/degree k/(kJ/mol)/rad^2\n")
 
             for angle in topology.angles:
                 itp_file.write(f"  {(angle.a1 + 1):<3d}  {(angle.a2 + 1):<3d}  {(angle.a3 + 1):<3d}"\
                              + f"  {angle.theta_in_degree.value_in_unit(degree):.2f}"\
-                             + f"       {angle.k.value_in_unit(kilojoule_per_mole/degree**2)}\n")
+                             + f"       {angle.k.value_in_unit(kilojoule_per_mole/radian**2)}\n")
             itp_file.write("\n")
         
 

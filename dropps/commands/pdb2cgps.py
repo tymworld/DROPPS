@@ -346,8 +346,8 @@ def getargs_pdb2cgps(argv):
     parser.add_argument('-f', '--input-pdb', type=str, help="PDB file containing structure information of a chain.")
     parser.add_argument('-ri', '--residue-index', type=int, help='Residue number of the first residue',
                         default=1)
-    parser.add_argument('-ptm', '--post-translational-modification', type=str, action='append',
-                        help='Post translational modification to add')
+    parser.add_argument('-ptm', '--post-translational-modification', type=str, nargs="+", 
+                        help='Post translational modification to add, format: original+number+modified, eg: S129S')
     parser.add_argument('-r', '--radius', type=float, help='Maximum radius of gyration of generated chain', 
                         default=2.0)
     parser.add_argument('-n', '--number', type=int, help='Number of conformations to generate',

@@ -8,7 +8,7 @@ from dropps.fileio.pdb_reader import read_pdb, write_pdb, phrase_pdb_atoms
 from dropps.fileio.filename_control import validate_extension
 from dropps.share.forcefield import getff, forcefield_list
 
-from openmm.unit import kilojoule_per_mole, nanometer, atomic_mass_unit, degree
+from openmm.unit import kilojoule_per_mole, nanometer, atomic_mass_unit, degree, radian
 
 from pathlib import Path
 
@@ -312,11 +312,11 @@ def modifyres(args):
             topology_new.angles = list()
         topology_new.angles.append(Angle(original_left_index - 1, original_index - 1, new_index - 1,
                                          ff_angle_thetas[0] * degree, 
-                                         ff_angle_ks[0] * kilojoule_per_mole / degree ** 2))
+                                         ff_angle_ks[0] * kilojoule_per_mole / radian ** 2))
         print(f"## Add angle {original_left_index}-{original_index}-{new_index}, theta={ff_angle_thetas[0]}, k={ff_angle_ks[0]}")
         topology_new.angles.append(Angle(original_right_index - 1, original_index - 1, new_index - 1,
                                          ff_angle_thetas[1] * degree,
-                                           ff_angle_ks[1] * kilojoule_per_mole / degree ** 2))
+                                           ff_angle_ks[1] * kilojoule_per_mole / radian ** 2))
         print(f"## Add angle {original_right_index}-{original_index}-{new_index}, theta={ff_angle_thetas[1]}, k={ff_angle_ks[1]}")
         
     # We now write output itp file.

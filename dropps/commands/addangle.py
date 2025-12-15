@@ -4,7 +4,7 @@
 from argparse import ArgumentParser
 from copy import deepcopy
 from dropps.fileio.itp_reader import read_itp, write_itp, Angle
-from openmm.unit import degree, kilojoule_per_mole
+from openmm.unit import degree, kilojoule_per_mole, radian
 
 def addangle(args):
 
@@ -57,10 +57,10 @@ def addangle(args):
         a2_id = a2 - residue_NTD
         a3_id = a3 - residue_NTD
 
-        print(f"## Adding angle to atoms {a1_id + 1}-{a2_id + 1}-{a3_id + 1} (resid: {a1}-{a2}-{a3}) at {theta_in_degree * degree} with {force * kilojoule_per_mole / degree ** 2}.")
+        print(f"## Adding angle to atoms {a1_id + 1}-{a2_id + 1}-{a3_id + 1} (resid: {a1}-{a2}-{a3}) at {theta_in_degree * degree} with {force * kilojoule_per_mole / radian ** 2}.")
         if topology.angles is None:
             topology.angles = list()
-        topology.angles.append(Angle(a1_id, a2_id, a3_id, theta_in_degree * degree, force * kilojoule_per_mole / degree ** 2))
+        topology.angles.append(Angle(a1_id, a2_id, a3_id, theta_in_degree * degree, force * kilojoule_per_mole / radian ** 2))
 
     # We now write output topology file
     write_itp(output_itp_name, topology)
