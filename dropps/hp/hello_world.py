@@ -1,9 +1,13 @@
 package_name = "DROPPS"
 package_abbr = "DPS"
-package_version = "0.1.0"
+package_version = "0.4.0"
 
 from sys import executable
 from os import path, getcwd
+
+import random
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Sequence, Tuple
 
 def print_hello(entry, cmd):
 
@@ -22,6 +26,8 @@ def print_hello(entry, cmd):
     title += f"SYNOPSIS\n\ndps command options\n"
     title += f"  use \"dps help command\"   to see a list of available commands.\n"
     title += f"  use \"dps help \'command\'\" to see help on the specific command.\n\n"
+
     title += f"DROPPS reminds you: \"Once there is a smart boy who loves publishing his papers in Nature.\"\n"
 
     print(title)
+

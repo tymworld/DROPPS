@@ -23,7 +23,7 @@ from pathlib import Path
 import os
 
 
-prog = "cmap"
+prog = "contact.old"
 desc = '''This program calculate contact map in a residue-level resolution.'''
 
 def getargs_contactmap(argv):
@@ -352,4 +352,4 @@ def contactmap(args):
             write_xpm(omatrix, filename)
 
 from dropps.share.command_class import single_command
-contactmap_commands = single_command("cmap", getargs_contactmap, contactmap, desc)
+contactmap_commands = single_command("contact.old", getargs_contactmap, contactmap, desc)

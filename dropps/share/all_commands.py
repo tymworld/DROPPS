@@ -21,11 +21,16 @@ commands_analysis = [dropps.analysis.make_ndx.make_ndx_commands,
                      dropps.analysis.check.check_commands,
                      dropps.analysis.density.density_commands,
                      dropps.analysis.gyrate.gyrate_commands,
-                     dropps.analysis.contact_map.contactmap_commands,
+                     #dropps.analysis.contact_map.contactmap_commands,
                      dropps.analysis.angle.angle_commands,
                      dropps.analysis.intra_distance.intra_distance_commands,
                      dropps.analysis.inter_distance.inter_distance_commands,
                      #dropps.analysis.contact_number.contact_number_commands,
-                     dropps.analysis.msd.msd_commands]
+                     dropps.analysis.contact.contact_commands,
+                     dropps.analysis.contact_statistic.contact_statistic_commands,
+                     dropps.analysis.msd.msd_commands,
+                     dropps.analysis.assembly.assembly_commands,
+                     dropps.analysis.pdb2bond.pdb2bond_commands]
+                     #dropps.analysis.sasa_mdtraj.sasa_commands]
 
 all_commands = all_commands_class(commands_modelling + commands_simulation + commands_analysis)

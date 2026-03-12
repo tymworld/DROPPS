@@ -32,11 +32,13 @@ class trajectory_class():
 
         charges = [atom.charge for itp in self.tpr.itp_list for atom in itp.atoms]
         masses = [atom.mass for itp in self.tpr.itp_list for atom in itp.atoms]
-        sigmas = [itp.type2sigma[atom.abbr] for itp in self.tpr.itp_list for atom in itp.atoms]
-        mylambdas = [itp.type2mylambda[atom.abbr] for itp in self.tpr.itp_list for atom in itp.atoms]
         
-        self.mylambdas = mylambdas
-        self.sigmas = sigmas
+        if self.tpr.parameters["vdwtype"] == "pLJ":
+            sigmas = [itp.type2sigma[atom.abbr] for itp in self.tpr.itp_list for atom in itp.atoms]
+            mylambdas = [itp.type2mylambda[atom.abbr] for itp in self.tpr.itp_list for atom in itp.atoms]
+            
+            self.mylambdas = mylambdas
+            self.sigmas = sigmas
 
         self.Universe.add_TopologyAttr("charges", charges)
         self.Universe.add_TopologyAttr("masses", masses)
@@ -55,7 +57,8 @@ class trajectory_class():
             file_extention = splitext(trajectory_path)[1].lower()
 
             if file_extention == ".xtc":
-                self.Universe.load_new(trajectory_path)
+                print(f"Loading xtc trajectory file {trajectory_path} ...")
+                self.Universe.load_new(trajectory_path, in_memory=False)
                 print(f"## Loaded trajectory file {trajectory_path} into Universe.")
                 print(f"## Assuming trajectory file in unit angstrom")
 
@@ -70,7 +73,8 @@ class trajectory_class():
         chain_length_list = [len(itp.atoms) for itp in self.tpr.itp_list]
         self.id2chainID = [i for i, length in enumerate(chain_length_list) for _ in range(length)]
         self.id2resID = [atom.residueid for itp in self.tpr.itp_list for atom in itp.atoms]
-        print(self.Universe.trajectory[0])
+        print(f"## The next line will contains the first frame of the trajectory witin the Universe for sanity check.")
+        print(f"## {self.Universe.trajectory[0]}")
     
     def get_chainID(self, index):
         if index < 0 or index > self.num_atoms():
@@ -141,12 +145,14 @@ class trajectory_class():
     def getSelection(self, selection_string, help = "analyzing group"):
         if selection_string.isdigit():
             indices = self.index.phraseSelection("group " + selection_string)
+            selection_name = self.index.index_groups[int(selection_string.strip())].name
         else:         
             indices = self.index.phraseSelection(selection_string)
+            selection_name = selection_string.replace(" ","")
             
         selection = self.Universe.atoms[indices]
         print(f"## Selected {len(selection)} atoms for {help}.\n")
-        selection_name = selection_string.replace(" ","")
+        
         return selection, selection_name
     
     def getSelection_interactive(self, help = "analyzing group"):

@@ -53,38 +53,73 @@ def genmesh(args):
 
     # We first get the radius of each molecule
 
-    diameter = np.ceil(
-        np.max([
-            [np.max([atom["x"].value_in_unit(nanometer) for atom in molecule]) - np.min([atom["x"].value_in_unit(nanometer) for atom in molecule]) for molecule in molecule_list],
-            [np.max([atom["y"].value_in_unit(nanometer) for atom in molecule]) - np.min([atom["y"].value_in_unit(nanometer) for atom in molecule]) for molecule in molecule_list],
-            [np.max([atom["z"].value_in_unit(nanometer) for atom in molecule]) - np.min([atom["z"].value_in_unit(nanometer) for atom in molecule]) for molecule in molecule_list]
+    if args.non_cubic_molecule:
+        print("## Non-cubic molecule option is set. The maximum diameter among x/y/z direction will be used for mesh generation.")
+        diameter_x = np.max([np.max([atom["x"].value_in_unit(nanometer) for atom in molecule]) - np.min([atom["x"].value_in_unit(nanometer) for atom in molecule]) for molecule in molecule_list])
+        diameter_y = np.max([np.max([atom["y"].value_in_unit(nanometer) for atom in molecule]) - np.min([atom["y"].value_in_unit(nanometer) for atom in molecule]) for molecule in molecule_list])
+        diameter_z = np.max([np.max([atom["z"].value_in_unit(nanometer) for atom in molecule]) - np.min([atom["z"].value_in_unit(nanometer) for atom in molecule]) for molecule in molecule_list])
+
+        distance_between_mesh_point_x = diameter_x + args.gap
+        distance_between_mesh_point_y = diameter_y + args.gap
+        distance_between_mesh_point_z = diameter_z + args.gap
+
+        print(f"The maximum diameter among all molecules is {diameter_x}, {diameter_y}, {diameter_z} in x/y/z direction respectively.")
+        print(f"The minimun distance between wach two configuration is {args.gap}.")
+        print(f"## The distance between each two adjancy mesh point is {distance_between_mesh_point_x}, {distance_between_mesh_point_y}, {distance_between_mesh_point_z} in x/y/z direction respectively.")
+
+        box_size_mesh = [int(np.ceil(mesh[0] * distance_between_mesh_point_x + args.gap)),
+                            int(np.ceil(mesh[1] * distance_between_mesh_point_y + args.gap)),
+                            int(np.ceil(mesh[2] * distance_between_mesh_point_z + args.gap))]
+        
+        print(f"## The box size determined by mesh is larger than {box_size_mesh[0]}*{box_size_mesh[1]}*{box_size_mesh[2]}")
+        box_size = [float(max(box_size_mesh[0], args.minimum_x)),
+                    float(max(box_size_mesh[1], args.minimum_y)),
+                    float(max(box_size_mesh[2], args.minimum_z))]
+        print(f"## The box size is set as {box_size[0]}*{box_size[1]}*{box_size[2]}")
+
+        mesh_points_raw = np.array([
+            [diameter_x / 2 + (diameter_x + args.gap) * x_index,
+            diameter_y / 2 + (diameter_y + args.gap) * y_index,
+            diameter_z / 2 + (diameter_z + args.gap) * z_index]
+            for x_index in range(mesh[0])
+            for y_index in range(mesh[1])
+            for z_index in range(mesh[2])
         ])
-    )
 
-    print(f"## The maximum diameter for all configurations is {diameter}.")
-    print(f"## The minimun distance between wach two configuration is {args.gap}.")
-    distance_between_mesh_point = np.ceil(diameter + args.gap)
-    print(f"## The distance between each two adjancy mesh point is {distance_between_mesh_point}.")
+    else:
 
-    # We now determine the size of the box
+        diameter = np.ceil(
+            np.max([
+                [np.max([atom["x"].value_in_unit(nanometer) for atom in molecule]) - np.min([atom["x"].value_in_unit(nanometer) for atom in molecule]) for molecule in molecule_list],
+                [np.max([atom["y"].value_in_unit(nanometer) for atom in molecule]) - np.min([atom["y"].value_in_unit(nanometer) for atom in molecule]) for molecule in molecule_list],
+                [np.max([atom["z"].value_in_unit(nanometer) for atom in molecule]) - np.min([atom["z"].value_in_unit(nanometer) for atom in molecule]) for molecule in molecule_list]
+            ])
+        )
 
-    box_size_mesh = [int(np.ceil(mesh[index] * distance_between_mesh_point + args.gap)) for index in range(3)]
-    print(f"## The box size determined by mesh is larger than {box_size_mesh[0]}*{box_size_mesh[1]}*{box_size_mesh[2]}")
-    box_size = [float(max(box_size_mesh[0], args.minimum_x)),
-                float(max(box_size_mesh[1], args.minimum_y)),
-                float(max(box_size_mesh[2], args.minimum_z))]
-    print(f"## The box size is set as {box_size[0]}*{box_size[1]}*{box_size[2]}")
+        print(f"## The maximum diameter for all configurations is {diameter}.")
+        print(f"## The minimun distance between wach two configuration is {args.gap}.")
+        distance_between_mesh_point = diameter + args.gap
+        print(f"## The distance between each two adjancy mesh point is {distance_between_mesh_point}.")
 
-    # We then generate a list for mesh point (centroid of each molecule)
+        # We now determine the size of the box
 
-    mesh_points_raw = np.array([
-        [diameter / 2 + (diameter + args.gap) * x_index,
-        diameter / 2 + (diameter + args.gap) * y_index,
-        diameter / 2 + (diameter + args.gap) * z_index]
-        for x_index in range(mesh[0])
-        for y_index in range(mesh[1])
-        for z_index in range(mesh[2])
-    ])
+        box_size_mesh = [int(np.ceil(mesh[index] * distance_between_mesh_point + args.gap)) for index in range(3)]
+        print(f"## The box size determined by mesh is larger than {box_size_mesh[0]}*{box_size_mesh[1]}*{box_size_mesh[2]}")
+        box_size = [float(max(box_size_mesh[0], args.minimum_x)),
+                    float(max(box_size_mesh[1], args.minimum_y)),
+                    float(max(box_size_mesh[2], args.minimum_z))]
+        print(f"## The box size is set as {box_size[0]}*{box_size[1]}*{box_size[2]}")
+
+        # We then generate a list for mesh point (centroid of each molecule)
+
+        mesh_points_raw = np.array([
+            [diameter / 2 + (diameter + args.gap) * x_index,
+            diameter / 2 + (diameter + args.gap) * y_index,
+            diameter / 2 + (diameter + args.gap) * z_index]
+            for x_index in range(mesh[0])
+            for y_index in range(mesh[1])
+            for z_index in range(mesh[2])
+        ])
 
 
     if args.shuffle:
@@ -157,6 +192,16 @@ def genmesh(args):
     output_topology_filename = output_topology_file_prefix + ".top"
 
     topologies = [read_itp(filename) for filename in args.topology]
+
+    # We test forcefield functions for these itp files
+    forcefield_function_type_LJ = list(set([top.function_type_LJ for top in topologies]))
+    forcefield_function_type_Coulomb = list(set([top.function_type_LJ for top in topologies]))
+    if len(forcefield_function_type_LJ) > 1 or len(forcefield_function_type_Coulomb) > 1:
+        print("ERROR: Different forcefield function types found in input topology files.")
+        quit()
+    else:
+        print(f"## All input topology files use forcefield function types: LJ-{forcefield_function_type_LJ[0]}, Coulomb-{forcefield_function_type_Coulomb[0]}.")
+
     molecule_names = [top.molecule_name for top in topologies]
 
     output_topology_file = open(output_topology_filename, 'w')
@@ -232,6 +277,9 @@ def getargs_genmesh(argv):
     parser.add_argument('-mz', '--minimum-z', type=float, help="Minimum length of the box in the z direction. Zero is as small as posible.", default=0)
     parser.add_argument('-s', '--shuffle', action='store_true', default=False, 
                         help="Whether the molecules to input are shuffled before insertion.")
+    
+    parser.add_argument('-ncm', '--non-cubic-molecule', action='store_true', default=False, 
+                        help="Whether not to force the input molecules to be cubic before insertion.")
 
     parser.add_argument('-oc', '--output-conformation', type=str, help="File prefix to write output configuration",
                         default="system.pdb",

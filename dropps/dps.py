@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+
+from dropps.share.all_commands import all_commands
+from dropps.hp.hello_world import print_hello
+import sys
+
+def main():
+
+    argv = sys.argv if len(sys.argv) > 1 else ["none", "help"]
+    getargs_command = all_commands.getargs(argv[1])
+    real_command = all_commands.command(argv[1])
+    print_hello(sys.argv[0], " ".join(sys.argv[1:]))
+
+    args = getargs_command(argv[2:])
+    real_command(args)
+
+if __name__ == "__main__":
+    main()

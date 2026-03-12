@@ -1,5 +1,9 @@
 # Temperature-dependent HPS forcefield for slab simulation
 
+[ function-type ]
+#  LJ              Couloumb
+   Ashbaugh-Hatch  Debye-Huckel
+
 [ residue-type ]
 #   abbr    name    sigma     lambda  mass          charges
     H       HIS     0.608     0.514   137.100       0.5

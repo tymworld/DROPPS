@@ -3,6 +3,27 @@ from openmm.unit import nanometer
 from dataclasses import dataclass
 from typing import List
 
+#from __future__ import annotations
+from typing import Dict, Iterable, List, Sequence
+
+def atom_id_to_written_id(atom_id):
+    if atom_id < 0:
+        raise ValueError("Atom ID must be non-negative.")
+    elif atom_id < 100000:
+        return f"{atom_id:>5d}"
+    else:
+        # For atom IDs >= 100000, use hexadecimal representation
+        hex_id = hex(atom_id)[2:].upper()  # Convert to hex and remove '0x'
+        return f"{hex_id:>5s}"[-5:]  # Right-align and take last 5 characters
+
+def written_id_to_atom_id(written_id):
+    try:
+        # Try to parse as decimal first
+        return int(written_id)
+    except ValueError:
+        # If that fails, parse as hexadecimal
+        return int(written_id, 16)
+
 def distance(bead1, bead2):
     temp_distance = math.sqrt(pow(bead1[0] - bead2[0], 2)
                               + pow(bead1[1] - bead2[1], 2)
@@ -40,7 +61,7 @@ def read_pdb(pdb_path):
 
             elif line.startswith("ATOM"):
                 atom = {
-                    "serial": int(line[6:11]),
+                    "serial": written_id_to_atom_id(line[6:11]),
                     "name": line[12:16].strip(),
                     "resname": line[17:20].strip(),
                     "chain": line[21].strip(),
@@ -124,9 +145,13 @@ def phrase_pdb_atoms(atoms, box):
         box_size=box_size
     )
 
+def write_pdbData(pdb_file_name, data: PDBData, bond_list=None):
+    write_pdb(pdb_file_name, data.box_size, data.record_names, data.serial_numbers, data.atom_names, data.residue_names,
+              data.chain_IDs, data.residue_sequence_numbers, data.x_nms, data.y_nms, data.z_nms, data.occupancys, data.bfactors,
+              data.elements, data.molecule_length_list, bond_list)
 
 def write_pdb(pdb_file_name, box_size, record_name, serial_number, atom_name, residue_name, chain_ID, residue_sequence_number, 
-              x_nm, y_nm, z_nm, occupancy, b_factor, element_symbol, molecule_length_list):
+              x_nm, y_nm, z_nm, occupancy, b_factor, element_symbol, molecule_length_list, bond_list=None):
     
     with open(pdb_file_name, 'w') as pdb_file:
 
@@ -139,10 +164,10 @@ def write_pdb(pdb_file_name, box_size, record_name, serial_number, atom_name, re
             # PDB atom line: fixed-width format
             # Columns: https://www.wwpdb.org/documentation/file-format-content/format33/sect9.html#ATOM
             pdb_file.write(
-                "{:<6s}{:>5d} {:<4s} {:>3s} {:1s}{:>4d}    "
+                "{:<6s}{:>5s} {:<4s} {:>3s} {:1s}{:>4d}    "
                 "{:>8.3f}{:>8.3f}{:>8.3f}{:6.2f}{:6.2f}          {:>2s}\n".format(
                     record_name[index],      # Record name
-                    serial_number[index],           # Atom serial number
+                    atom_id_to_written_id(serial_number[index]),           # Atom serial number
                     atom_name[index],    # Atom name, left aligned, max 4 chars
                     residue_name[index],       # Residue name
                     chain_ID[index][-1],         # Chain ID
@@ -154,5 +179,43 @@ def write_pdb(pdb_file_name, box_size, record_name, serial_number, atom_name, re
             )
             if index in TER_list:
                 pdb_file.write("TER\n")
+        
+        if bond_list is not None:
+
+            for ln in conect_lines_from_bond_dict(bond_list):
+                pdb_file.write(f"{ln}\n")
 
         pdb_file.write("END\n")
+
+
+def conect_lines_from_bond_dict(
+    bond_list: Dict[int, Sequence[int]],
+    *,
+    sort_atoms: bool = True,
+    sort_bonded: bool = True,
+) -> List[str]:
+    """
+    Convert a 0-based adjacency dict {atom_index: [connected_atom_indices...]}
+    into PDB CONECT records (1-based serials), with up to 4 bonded atoms per line.
+
+    Returns a list of lines WITHOUT trailing newline.
+    """
+    # Choose deterministic order if requested
+    atoms: Iterable[int] = sorted(bond_list) if sort_atoms else bond_list.keys()
+
+    lines: List[str] = []
+    for a0 in atoms:
+        bonded0 = list(bond_list.get(a0, []))
+        if sort_bonded:
+            bonded0.sort()
+
+        a_serial = a0 + 1  # 1-based serial in PDB
+
+        # Chunk bonded atoms into groups of 4 per CONECT line
+        for i in range(0, len(bonded0), 4):
+            chunk = bonded0[i : i + 4]
+            # Build fixed-width fields: "CONECT" + 5*integer(5 cols each)
+            fields = ["CONECT", f"{a_serial:>5d}"] + [f"{(b + 1):>5d}" for b in chunk]
+            line = "".join(fields).ljust(31)  # pad to at least through col 31
+            lines.append(line.rstrip())        # keep clean; PDB readers usually accept this
+    return lines

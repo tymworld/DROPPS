@@ -3,7 +3,7 @@
 
 from argparse import ArgumentParser
 from copy import deepcopy
-from dropps.fileio.itp_reader import read_itp, write_itp, Atomtype, Atom, Bond, Angle
+from dropps.fileio.itp_reader import read_itp, write_itp, Atomtype_AH_DH, Atom, Bond, Angle
 from dropps.fileio.pdb_reader import read_pdb, write_pdb, phrase_pdb_atoms
 from dropps.fileio.filename_control import validate_extension
 from dropps.share.forcefield import getff, forcefield_list
@@ -236,7 +236,7 @@ def modifyres(args):
 
         print(f"## Will add atom type {abbr_m}, name: {name_m}, sigma: {sigma_m}, lambda: {lambda_m}, T0/1/2: {T0_m}/{T1_m}/{T2_m}")
         
-        topology_new.atomtypes.append(Atomtype(abbr_m, name_m, sigma_m, lambda_m,
+        topology_new.atomtypes.append(Atomtype_AH_DH(abbr_m, name_m, sigma_m, lambda_m,
                                                T0_m, T1_m, T2_m))
         topology_new.typelist.append(abbr_m)
     
@@ -257,7 +257,7 @@ def modifyres(args):
         
         print(f"## Will add atom type {abbr_m}, name: {name_m}, sigma: {sigma_m}, lambda: {lambda_m}, T0/1/2: {T0_m}/{T1_m}/{T2_m}")
         
-        topology_new.atomtypes.append(Atomtype(abbr_m, name_m, sigma_m, lambda_m,
+        topology_new.atomtypes.append(Atomtype_AH_DH(abbr_m, name_m, sigma_m, lambda_m,
                                                T0_m, T1_m, T2_m))
         topology_new.typelist.append(abbr_m)
     

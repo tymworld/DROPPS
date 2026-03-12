@@ -1,19 +1,13 @@
-import re
-from collections import defaultdict
-from dropps.fileio.itp_reader import read_itp
-from dropps.fileio.pdb_reader import read_pdb
-import openmm
-import openmm.app
-from openmm.unit import nanometer, kilojoule_per_mole, moles, liter, kilocalorie_per_mole, radian
-import math
-import copy
 
 if __name__ == "__main__":
+
 
     from os.path import dirname, realpath, sep, pardir
     import sys
     import json
     import os
+    sys.path.append("/Users/TYM-work/Repository/DROPPS")
+
 
     # Get the absolute path of the current script
     current_path = os.path.abspath(__file__)
@@ -25,7 +19,91 @@ if __name__ == "__main__":
     # Add to Python path
     sys.path.append(father_dir)
 
+import re
+from collections import defaultdict
+from dropps.fileio.itp_reader import read_itp
+from dropps.fileio.pdb_reader import read_pdb
+import openmm
+import openmm.app
+from openmm.unit import nanometer, kilojoule_per_mole, moles, liter, kilocalorie_per_mole, radian, nanometer, dimensionless
+import math
+import copy
+
+
 from dropps.hp.constants import kappa_coefficient, relative_permittivity, k0
+
+import numpy as np
+
+def combine_topologies(topology_list):
+    """
+    topology_list: list of objects, each has dicts:
+      - top.types2sigma, top.types2mu, top.types2epsilon
+    Each dict maps "type1-type2" -> value
+    Returns: typelist_nb, sigma_matrix, mu_matrix, epsilon_matrix
+    """
+
+    def split_key(k: str):
+        a, b = k.split("-", 1)
+        return a.strip(), b.strip()
+
+    def norm_pair(a: str, b: str):
+        return (a, b) if a <= b else (b, a)
+
+    # -------- (1) collect all types --------
+    types_set = set()
+    for top in topology_list:
+        for d in (top.types2sigma, top.types2mu, top.types2epsilon):
+            for k in d.keys():
+                a, b = split_key(k)
+                types_set.add(a); types_set.add(b)
+
+    typelist_nb = sorted(types_set)
+    n = len(typelist_nb)
+    idx = {t: i for i, t in enumerate(typelist_nb)}
+
+    # -------- helper: merge dicts with conflict checks (A-B same as B-A) --------
+    def merge_param(topology_list, attr_name: str):
+        merged = {}  # (minType,maxType) -> value
+        for top in topology_list:
+            d = getattr(top, attr_name)
+            for k, v in d.items():
+                a, b = split_key(k)
+                p = norm_pair(a, b)
+                if p in merged:
+                    if merged[p] != v:
+                        raise ValueError(
+                            f"Conflict in {attr_name} for pair {p[0]}-{p[1]}: "
+                            f"{merged[p]} vs {v}"
+                        )
+                else:
+                    merged[p] = v
+        return merged
+
+    sigma_map   = merge_param(topology_list, "types2sigma")
+    mu_map      = merge_param(topology_list, "types2mu")
+    epsilon_map = merge_param(topology_list, "types2epsilon")
+
+    # -------- (2)(3)(4) build symmetric matrices --------
+    def build_matrix(pmap, name: str, fill=np.nan):
+        M = np.full((n, n), fill, dtype=float)
+        for (a, b), v in pmap.items():
+            i, j = idx[a], idx[b]
+            M[i, j] = float(v)
+            M[j, i] = float(v)
+        # optional: ensure diagonal exists if present as "A-A"
+        # (already handled by norm_pair)
+        return M
+
+    sigma_matrix   = build_matrix(sigma_map, "sigma")
+    mu_matrix      = build_matrix(mu_map, "mu")
+    epsilon_matrix = build_matrix(epsilon_map, "epsilon")
+
+    return typelist_nb, sigma_matrix, mu_matrix, epsilon_matrix
+
+
+# Example:
+# typelist_nb, sigma_matrix, mu_matrix, epsilon_matrix = combine_topologies(topology_list)
+
 
 def build_system(pdb_file, top_file, parameters):
 
@@ -48,10 +126,24 @@ def build_system(pdb_file, top_file, parameters):
             elif current_section:
                 sections[current_section].append(line)
 
-    
         molecule_with_number = [re.split(r'\s+', line.split(";")[0].strip()) for line in sections["system"]]
 
         loaded_topologies = [read_itp(itp_filename) for itp_filename in sections["itp files"]]
+
+        # We test forcefield functions for these itp files
+
+        print(loaded_topologies[0].__dict__.keys())
+
+        forcefield_function_type_LJ = list(set([top.function_type_LJ for top in loaded_topologies]))
+        forcefield_function_type_Coulomb = list(set([top.function_type_Coulomb for top in loaded_topologies]))
+        if len(forcefield_function_type_LJ) > 1 or len(forcefield_function_type_Coulomb) > 1:
+            print("ERROR: Different forcefield function types found in input topology files.")
+            quit()
+        else:
+            print(f"## All input topology files use forcefield function types: LJ-{forcefield_function_type_LJ[0]}, Coulomb-{forcefield_function_type_Coulomb[0]}.")
+            forcefield_function_type_LJ = forcefield_function_type_LJ[0]
+            forcefield_function_type_Coulomb = forcefield_function_type_Coulomb[0]
+
         molecule_number_list = [int(molecule[1]) for molecule in molecule_with_number]
         print("## The following ITP files are read and loaded.")
         for itp_filename in sections["itp files"]:
@@ -253,6 +345,10 @@ def build_system(pdb_file, top_file, parameters):
 
     if parameters["vdwtype"] == "pLJ":
 
+        if forcefield_function_type_LJ != "Ashbaugh-Hatch":
+            print(f"## ERROR: MDP file comanding pLJ for vdwtype but topology is not Ashbaugh-Hatch type.")
+            quit()
+
         lj_force = openmm.CustomNonbondedForce("""
         step(rc - r)*(lj + (1 - lambda)*epsilon) + step(r - rc)*(lambda*lj);
         lj = 4*epsilon*((sigma/r)^12 - (sigma/r)^6);
@@ -286,10 +382,101 @@ def build_system(pdb_file, top_file, parameters):
 
         print(f"## LJ: Cutoff for LJ interaction set to static value of {lj_force.getCutoffDistance()}.")
 
+        temperature = parameters["production_temperature"]
+
+
+        for id, top in enumerate(topology_list):
+            for atom in top.atoms:
+                mylambda = atomtypes_dict[atom.abbr].mylambda + atomtypes_dict[atom.abbr].T0 \
+                      + atomtypes_dict[atom.abbr].T1 * temperature \
+                      + atomtypes_dict[atom.abbr].T2 * temperature * temperature
+
+                lj_force.addParticle([atomtypes_dict[atom.abbr].sigma, mylambda])
+
+        lj_force.setForceGroup(1)
+        
+        mdsystem.addForce(lj_force)
+
+        print(f"## LJ interaction added to system with {lj_force.getNumParticles()} particles.")
+
+    elif parameters["vdwtype"] == "MPiPi":
+
+        if forcefield_function_type_LJ != "Wang-Frenkel":
+            print(f"## ERROR: MDP file commanding MPiPi for vdwtype but topology is not Wang–Frenkel type.")
+            quit()
+        
+        lj_force = openmm.CustomNonbondedForce("""
+        epsilon * alpha * part1 * part2 ^ (2 * nu);
+        part1 = (sigma / r) ^ (2 * mu) - 1;
+        part2 = (R / r) * (2 * mu) - 1;
+        alpha = 2 * nu * (R / sigma) ^ (2 * mu) * (upper / lower) ^ (2 * nu + 1);
+        upper = 2 * nu + 1;
+        lower = 2 * nu * ((R / sigma) ^ (2 * mu) - 1);
+        R = RScale * sigma;
+        epsilon=eps_unit * epsilon_Table(type1,type2); 
+        sigma=sigma_unit * sigma_Table(type1,type2);
+        mu=mu_unit * mu_Table(type1,type2)                         
+        """)
+
+        print(f"## LJ: LJ interaction will be calculated using the following equation:")
+        print(f"## {lj_force.getEnergyFunction()}")
+
+        lj_force.addGlobalParameter("eps_unit", defaultValue = 1 * kilojoule_per_mole)
+        lj_force.addGlobalParameter('sigma_unit',defaultValue = 1 * nanometer)
+        lj_force.addGlobalParameter('mu_unit', defaultValue = 1 * dimensionless)
+
+        lj_force.addGlobalParameter("RScale", defaultValue=3)
+        lj_force.addGlobalParameter("nu", defaultValue=1)
+
+        #lj_force.addPerParticleParameter("epsilon")
+        #lj_force.addPerParticleParameter("sigma")
+        #lj_force.addPerParticleParameter("mu")
+
+        lj_force.addPerParticleParameter('type')
+
+        for i in range(lj_force.getNumGlobalParameters()):
+            print(f"## LJ: Global parameter for LJ interaction, {lj_force.getGlobalParameterName(i)}, "\
+                + f"set as {lj_force.getGlobalParameterDefaultValue(i)}.")
+            
+        parameter_string = ','.join([f"{lj_force.getPerParticleParameterName(i)}" for i in range(lj_force.getNumPerParticleParameters())])    
+        print(f"## LJ: LJ interaction contains {lj_force.getNumPerParticleParameters()} per particle parameters: {parameter_string}.")
+
+        # Adding exclusions to LJ interaction.
+        for [a1, a2] in exclusion_list:
+            lj_force.addExclusion(a1, a2)
+        
+        print(f"## LJ: LJ interaction contains {lj_force.getNumExclusions()} exclusion pairs.")
+            
+        lj_force.setCutoffDistance(parameters["cutoff_lj"] * nanometer)
+        lj_force.setNonbondedMethod(openmm.CustomNonbondedForce.CutoffPeriodic)
+
+        print(f"## LJ: Cutoff for LJ interaction set to static value of {lj_force.getCutoffDistance()}.")
+
+        typelist_nb, sigma_matrix, mu_matrix, epsilon_matrix = combine_topologies(topology_list)
+        ntypes = len(typelist_nb)
+        print(f"## Will add tabulated function for LJ interaction with {ntypes} types.")
+        print(f"## Type list: {','.join(typelist_nb)}")
+        lj_force.addTabulatedFunction("epsilon_Table", openmm.Discrete2DFunction(ntypes, ntypes, epsilon_matrix.flatten()))
+        lj_force.addTabulatedFunction("sigma_Table", openmm.Discrete2DFunction(ntypes, ntypes, sigma_matrix.flatten()))
+        lj_force.addTabulatedFunction("mu_Table", openmm.Discrete2DFunction(ntypes, ntypes, mu_matrix.flatten()))    
+
+        for id, top in enumerate(topology_list):
+            for atom in top.atoms:
+                lj_force.addParticle([typelist_nb.index(atom.abbr)])  
+        
+        mdsystem.addForce(lj_force)
+
+        print(f"## LJ interaction added to system with {lj_force.getNumParticles()} particles.")
+
     else:
-        print(f"## WARNING: LJ interaction will not be calculated.")
+        print(f"## CRITICAL WARNING: LJ interaction will not be calculated.")
+        quit()
 
     if parameters["coulombtype"] == "yukawa":
+
+        if forcefield_function_type_Coulomb != "Debye-Huckel":
+            print(f"## ERROR: MDP file commanding yukawa for coulombtype but topology is not Debye-Huckel type but {forcefield_function_type_Coulomb}.")
+            quit()
 
         coulomb_force = openmm.CustomNonbondedForce("""
         k/D*q1*q2*exp(-r/debye)/r
@@ -328,27 +515,6 @@ def build_system(pdb_file, top_file, parameters):
 
         print(f"## Coulomb: Cutoff for Coulomb interaction set to static value of {coulomb_force.getCutoffDistance()}.")
 
-    else:
-        print(f"## WARNING: Coulomb interaction will not be calculated.")
-    
-    if parameters["vdwtype"] == "pLJ":
-
-        for id, top in enumerate(topology_list):
-            for atom in top.atoms:
-                mylambda = atomtypes_dict[atom.abbr].mylambda + atomtypes_dict[atom.abbr].T0 \
-                      + atomtypes_dict[atom.abbr].T1 * temperature \
-                      + atomtypes_dict[atom.abbr].T2 * temperature * temperature
-
-                lj_force.addParticle([atomtypes_dict[atom.abbr].sigma, mylambda])
-
-        lj_force.setForceGroup(1)
-        
-        mdsystem.addForce(lj_force)
-
-        print(f"## LJ interaction added to system with {lj_force.getNumParticles()} particles.")
-
-    if parameters["coulombtype"] == "yukawa":
-
         for id, top in enumerate(topology_list):
             for atom in top.atoms:
                 coulomb_force.addParticle([atom.charge])
@@ -357,6 +523,9 @@ def build_system(pdb_file, top_file, parameters):
         mdsystem.addForce(coulomb_force)
 
         print(f"## Coulomb interaction added to system with {coulomb_force.getNumParticles()} particles.")
+
+    else:
+        print(f"## WARNING: Coulomb interaction will not be calculated.")
     
     print(f"## The mdsystem contains {mdsystem.getNumForces()} types of forces.")
 
@@ -378,10 +547,13 @@ def build_system(pdb_file, top_file, parameters):
 # Example usage
 if __name__ == "__main__":
 
+
+
     from os.path import dirname, realpath, sep, pardir
     import sys
     import json
     import os
+
 
     if len(sys.argv) < 2:
         print("Usage: python build_system.py <path_to_itp_file>")
@@ -389,8 +561,8 @@ if __name__ == "__main__":
 
     pdb_path = sys.argv[1]
     top_path = sys.argv[2]
+    mdp_path = sys.argv[3]
 
     from parameters import getparameter
 
-    result = build_system(pdb_path, top_path, getparameter("/Users/TYM-work/Repository/py_cgps.ng/src/share/templates/md.mdp"))
-
+    result = build_system(pdb_path, top_path, getparameter(mdp_path))

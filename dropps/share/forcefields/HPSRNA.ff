@@ -1,5 +1,9 @@
 # Original HPS forcefield for slab simulation
 
+[ function-type ]
+#  LJ              Couloumb
+   Ashbaugh-Hatch  Debye-Huckel
+
 [ residue-type ]
 #   abbr    name    sigma     lambda  mass          charges
     a       ADE     0.844    -0.054   329.200      -1.0

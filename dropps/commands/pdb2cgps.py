@@ -4,9 +4,11 @@
 from argparse import ArgumentParser
 import re
 from tqdm import tqdm
+import itertools
 
 from dropps.share.forcefield import getff, forcefield_list
 from dropps.fileio.pdb_reader import distance
+from dropps.fileio.itp_reader import ITPTopology
 import random
 import math
 from pathlib import Path
@@ -291,47 +293,118 @@ def pdb2cgps(args):
     # We next generate topology for this chain and write to itp file.
 
     if args.output_topology is not None:
+
         with open(topology_file_name, 'w') as itp_file:
 
-            print(f"## Generating topology to {topology_file_name}.")
+            if forcefield.function_type_LJ == "Ashbaugh-Hatch" and forcefield.function_type_Coulomb == "Debye-Huckel":
 
-            # Write forcefield and information lines
-            print(f"## The molecule will be named as {args.output_name} in topology file.")
-            itp_file.write(f"[ moleculetype ]\n; molname  nrexcl\n")
-            itp_file.write(f"{args.output_name}     1\n\n")
+                print(f"## Generating topology to {topology_file_name}.")
 
-            # Write atom type information
-            itp_file.write(f"[ atomtypes ]\n")
-            itp_file.write(f"; atom-abbr     atom-name  sigma   lambda   T0               T1              T2\n")
-            for abbr in set(sequence_abbreviation):
-                itp_file.write(f"  {abbr:12s}  {forcefield.abbr2aa[abbr][:3]:7s}   "
-                            + f"{forcefield.abbr2sigma[abbr]:>6.3f}   {forcefield.abbr2lambda[abbr]:.3f}   "
-                            + f"{forcefield.abbr2tempcoff[abbr][0]:>13.9f}   "
-                            + f"{forcefield.abbr2tempcoff[abbr][1]:>13.9f}   "
-                            + f"{forcefield.abbr2tempcoff[abbr][2]:>13.9f}   \n")
-            itp_file.write("\n")
+                # Write forcefield and information lines
+                print(f"## The molecule will be named as {args.output_name} in topology file.")
 
-            # Write atom information
-            itp_file.write(f"[ atoms ]\n")
-            itp_file.write(f"; id   atom-abbr  atom-name     residue  resid  mass    charge\n")
-            qtot = 0
-            for index, abbr in enumerate(sequence_abbreviation):
-                qtot += forcefield.abbr2charge[abbr]
-                itp_file.write(f"  {index + 1:<3d}  {abbr:<8s}   {forcefield.abbr2aa[abbr]:12s}  {forcefield.abbr2aa[abbr][:3]:7s}  {index + first_residue_index:<5d}  "
-                            + f"{forcefield.abbr2mass[abbr]:>6.2f}  {forcefield.abbr2charge[abbr]:5.2f}   ; qtot {qtot}\n")
-            itp_file.write("\n")
+                itp_file.write(f"[ moleculetype ]\n; molname  nrexcl\n")
+                itp_file.write(f"{args.output_name}     1\n\n")
 
-            # Write bond information
-            itp_file.write(f"[ bonds ]\n")
-            itp_file.write(f"; ai   aj   r0    k\n")
+                # Write function type
+                itp_file.write(f"[ function-type ]\n")
+                itp_file.write(f"; LJ_function   Coulomb_function\n")
+                itp_file.write(f"  {forcefield.function_type_LJ}   {forcefield.function_type_Coulomb}\n\n")
 
-            for index in range(len(sequence_abbreviation) - 1):
+                # Write atom type information
+                itp_file.write(f"[ atomtypes ]\n")
+                itp_file.write(f"; atom-abbr     atom-name  sigma   lambda   T0               T1              T2\n")
+                for abbr in set(sequence_abbreviation):
+                    itp_file.write(f"  {abbr:12s}  {forcefield.abbr2aa[abbr][:3]:7s}   "
+                                + f"{forcefield.abbr2sigma[abbr]:>6.3f}   {forcefield.abbr2lambda[abbr]:.3f}   "
+                                + f"{forcefield.abbr2tempcoff[abbr][0]:>13.9f}   "
+                                + f"{forcefield.abbr2tempcoff[abbr][1]:>13.9f}   "
+                                + f"{forcefield.abbr2tempcoff[abbr][2]:>13.9f}   \n")
+                itp_file.write("\n")
 
-                bondparameters = forcefield.bond2param[
-                    forcefield.abbr2bondtype[f"{sequence_abbreviation[index]}-{sequence_abbreviation[index + 1]}"]
-                    ]
-                itp_file.write(f"  {(index + 1):<3d}  {(index + 2):<3d}  {bondparameters["length"]:.2f}  {bondparameters["k"]}\n")
-            itp_file.write("\n")
+                # Write atom information
+                itp_file.write(f"[ atoms ]\n")
+                itp_file.write(f"; id   atom-abbr  atom-name     residue  resid  mass    charge\n")
+                qtot = 0
+                for index, abbr in enumerate(sequence_abbreviation):
+                    qtot += forcefield.abbr2charge[abbr]
+                    itp_file.write(f"  {index + 1:<3d}  {abbr:<8s}   {forcefield.abbr2aa[abbr]:12s}  {forcefield.abbr2aa[abbr][:3]:7s}  {index + first_residue_index:<5d}  "
+                                + f"{forcefield.abbr2mass[abbr]:>6.2f}  {forcefield.abbr2charge[abbr]:5.2f}   ; qtot {qtot}\n")
+                itp_file.write("\n")
+
+                # Write bond information
+                itp_file.write(f"[ bonds ]\n")
+                itp_file.write(f"; ai   aj   r0    k\n")
+
+                for index in range(len(sequence_abbreviation) - 1):
+
+                    bondparameters = forcefield.bond2param[
+                        forcefield.abbr2bondtype[f"{sequence_abbreviation[index]}-{sequence_abbreviation[index + 1]}"]
+                        ]
+                    itp_file.write(f"  {(index + 1):<3d}  {(index + 2):<3d}  {bondparameters["length"]:.2f}  {bondparameters["k"]}\n")
+                itp_file.write("\n")
+
+            elif forcefield.function_type_LJ == "Wang-Frenkel" and forcefield.function_type_Coulomb == "Debye-Huckel":
+
+                print(f"## Generating topology to {topology_file_name}.")
+
+                # Write forcefield and information lines
+                print(f"## The molecule will be named as {args.output_name} in topology file.")
+
+                itp_file.write(f"[ moleculetype ]\n; molname  nrexcl\n")
+                itp_file.write(f"{args.output_name}     1\n\n")
+
+                # Write function type
+                itp_file.write(f"[ function-type ]\n")
+                itp_file.write(f"; LJ_function   Coulomb_function\n")
+                itp_file.write(f"  {forcefield.function_type_LJ}   {forcefield.function_type_Coulomb}\n\n")
+
+                # Write atom type information
+                itp_file.write(f"[ atomtypes ]\n")
+                itp_file.write(f"; atom-abbr     atom-name \n")
+                for abbr in set(sequence_abbreviation):
+                    itp_file.write(f"  {abbr:12s}  {forcefield.abbr2aa[abbr][:3]:7s}   \n")
+                itp_file.write("\n")
+
+                # Write sigma, lambda, epsilon information
+                itp_file.write(f"[ nonbond_params ]\n")
+                itp_file.write(f"; atom-abbr-1  atom-abbr-2   sigma   mu   epsilon\n")
+                for abbr_1, abbr_2 in itertools.combinations_with_replacement(set(sequence_abbreviation), 2):
+                        pair = f"{abbr_1}-{abbr_2}"
+                        sigma = forcefield.abbrs2sigma[pair]
+                        mu = forcefield.abbrs2mu[pair]
+                        epsilon = forcefield.abbrs2epsilon[pair]
+                        itp_file.write(f"  {abbr_1:12s}  {abbr_2:12s}   {sigma:>6.3f}   {mu:.6f}   {epsilon:.6f}\n")
+                itp_file.write("\n")
+
+
+                # Write atom information
+                itp_file.write(f"[ atoms ]\n")
+                itp_file.write(f"; id   atom-abbr  atom-name     residue  resid  mass    charge\n")
+                qtot = 0
+                for index, abbr in enumerate(sequence_abbreviation):
+                    qtot += forcefield.abbr2charge[abbr]
+                    itp_file.write(f"  {index + 1:<3d}  {abbr:<8s}   {forcefield.abbr2aa[abbr]:12s}  {forcefield.abbr2aa[abbr][:3]:7s}  {index + first_residue_index:<5d}  "
+                                + f"{forcefield.abbr2mass[abbr]:>6.2f}  {forcefield.abbr2charge[abbr]:5.2f}   ; qtot {qtot}\n")
+                itp_file.write("\n")
+
+
+                # Write bond information
+                itp_file.write(f"[ bonds ]\n")
+                itp_file.write(f"; ai   aj   r0    k\n")
+
+                for index in range(len(sequence_abbreviation) - 1):
+
+                    bondparameters = forcefield.bond2param[
+                        forcefield.abbr2bondtype[f"{sequence_abbreviation[index]}-{sequence_abbreviation[index + 1]}"]
+                        ]
+                    itp_file.write(f"  {(index + 1):<3d}  {(index + 2):<3d}  {bondparameters["length"]:.2f}  {bondparameters["k"]}\n")
+                itp_file.write("\n")
+
+            else:
+                print(f"## ERROR: In pdb2dps, Unknown forcefield function types: LJ-{forcefield.function_type_LJ}, Coulomb-{forcefield.function_type_Coulomb}.")
+                quit()
+
 
 prog = "seq2cgps"
 desc = '''This program create pdb and top files for a given sequence.'''
