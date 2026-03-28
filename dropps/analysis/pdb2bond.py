@@ -48,8 +48,9 @@ def pdb2bond(args):
         try:
             topology = read_itp(args.topology)
 
-        except:
+        except Exception as exc:
             print(f"ERROR: Cannot process {args.topology} as a single molecule topology (ITP) file.")
+            print(f"ERROR: Root cause: {exc}")
             quit()
         
         topology_atom_number = len(topology.atoms)
@@ -60,8 +61,9 @@ def pdb2bond(args):
         try:
             topology = read_tpr(args.run_input).mdtopology
 
-        except:
+        except Exception as exc:
             print(f"ERROR: Cannot process {args.run_input} as a system topology (TPR) file.")
+            print(f"ERROR: Root cause: {exc}")
             quit()
         
         topology_atom_number = topology.getNumAtoms()
@@ -100,8 +102,9 @@ def pdb2bond(args):
 
     try:
         write_pdbData(args.output ,pdb_data, bead_to_bonded)
-    except:
+    except Exception as exc:
         print(f"ERROR: Cannot write to pdb file {args.output}")
+        print(f"ERROR: Root cause: {exc}")
         quit()
         
     print(f"PDB file written to {args.output}")

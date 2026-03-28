@@ -3,9 +3,6 @@ from math import sqrt
 # Parameters for default bond
 bond_length = 0.38
 
-# Parameters for LJ interaction
-epsilon = 0.2 * 4.1868
-
 # Parameters for Coulomb interaction
 relative_permittivity = 80
 k0 = 138.50895744

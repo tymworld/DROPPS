@@ -4,6 +4,13 @@
 #  LJ              Couloumb
    Ashbaugh-Hatch  Debye-Huckel
 
+[ relative-permittivity ]
+    80
+
+[ residue-epsilon ]
+# epsilon for Ashbaugh-Hatch LJ in kJ/mol
+    0.83736    
+
 [ residue-type ]
 #   abbr    name    sigma     lambda  mass          charges
     H       HIS     0.608     0.514   137.100       0.5
@@ -40,7 +47,7 @@
     S        SMP     SER_MPhos 0.518,0.376   0.703,0.459    70.070,94.971    0.0,-2.0   0.369  5000     118,104  50,50
     T        TMP     THR_MPhos 0.562,0.376   0.784,0.459    84.097,94.971    0.0,-2.0   0.365  5000     111,119   50,50
     Y        YMP     TYR_MPhos 0.646,0.376   0.973,0.459    146.166,94.971    0.0,-2.0   0.554  5000     127,133  50,50
-    
+
 [ bond ]
 # bond_name
   HPSBond
@@ -50,4 +57,3 @@
 H R K I F L W A M P C N V G S Q Y D E T SP TP YP KA KL
 # Terminal-2-residue
 H R K I F L W A M P C N V G S Q Y D E T SP TP YP KA KL
-

@@ -125,16 +125,18 @@ def density(args):
     try:
         ofile = open(output_file_name, 'w')
         print("## Open text file %s for output." % output_file_name)
-    except:
+    except Exception as exc:
         print("## An exception occurred when trying to open text file %s for output." % output_file_name)
+        print(f"## Root cause: {exc}")
         quit()
 
     # load trajectory into memory
 
     try:
         trajectory = trajectory_class(args.run_input, args.index, args.input)
-    except:
+    except Exception as exc:
         print("## An exception occurred when trying to open trajectory file %s." % args.input)
+        print(f"## Root cause: {exc}")
         quit()
 
     # We treat time for analysis and generate frame for analysis
@@ -245,8 +247,9 @@ def density(args):
 
         write_xvg(output_file_name, x / 10.0, density_profiles, title=title, xlabel=xlabel, ylabel=ylabel, legends=legends)
 
-    except:
+    except Exception as exc:
         print("## An exception occurred when trying to open text file %s for output." % output_file_name)
+        print(f"## Root cause: {exc}")
         quit()
 
     print(f"## Density profile written to {output_file_name}.")   

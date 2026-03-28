@@ -25,8 +25,9 @@ def getargs_make_ndx(argv):
 def make_ndx(args):
     try:
         tpr = read_tpr(args.run_input)
-    except:
+    except Exception as exc:
         print(f"ERROR: Cannot open tpr file {args.run_input}.")
+        print(f"ERROR: Root cause: {exc}")
         quit()
     
     print(f"## Loading topology from {args.run_input}.")
@@ -36,8 +37,9 @@ def make_ndx(args):
     try:
         if args.index is not None:
             index.load_ndx(args.index)
-    except:
+    except Exception as exc:
         print(f"ERROR: Cannot open index file {args.index}.")
+        print(f"ERROR: Root cause: {exc}")
         quit()
     
     print(f"Loading index entries from file {args.index}.")

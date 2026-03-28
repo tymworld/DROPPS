@@ -74,8 +74,9 @@ def contact_number(args):
 
     try:
         trajectory = trajectory_class(args.run_input, args.index, args.input)
-    except:
+    except Exception as exc:
         print("## An exception occurred when trying to open trajectory file %s." % args.input)
+        print(f"## Root cause: {exc}")
         quit()
     
     if args.treat_pbc is True:

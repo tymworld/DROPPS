@@ -49,6 +49,10 @@ class ITPTopology():
 
         self.function_type_LJ = data["function_type_LJ"]
         self.function_type_Coulomb = data["function_type_Coulomb"]
+        self.relative_permittivity_mode = data["relative_permittivity_mode"]
+        self.relative_permittivity = data["relative_permittivity"]
+        self.relative_permittivity_coeffs = data["relative_permittivity_coeffs"]
+        self.simulation_settings = data.get("simulation_settings", [])
 
         if self.function_type_LJ == "Ashbaugh-Hatch" and self.function_type_Coulomb == "Debye-Huckel":
 
@@ -63,6 +67,7 @@ class ITPTopology():
             
             self.type2sigma = {atomtype.abbr: atomtype.sigma for atomtype in self.atomtypes}
             self.type2mylambda = {atomtype.abbr: atomtype.mylambda for atomtype in self.atomtypes}
+            self.epsilon = data["epsilon"]
             
             self.atoms = [Atom(atom["abbr"],atom["name"],atom["residue"],atom["residueid"],atom["mass"],atom["charge"])
                 for atom in data["atoms"]
@@ -170,6 +175,69 @@ def read_itp(file_path):
         print(f"ERROR: The itp file {file_path} may not include function type. ")
         print(f"       You maybe using a new DROPPS version with an old itp file.")
         quit()
+
+    parsed_data["relative_permittivity_mode"] = "constant"
+    parsed_data["relative_permittivity"] = 80.0
+    parsed_data["relative_permittivity_coeffs"] = None
+    parsed_data["simulation_settings"] = []
+    if "coulomb_global" in sections and len(sections["coulomb_global"]) > 0:
+        parts = re.split(r'\s+', sections["coulomb_global"][0].strip())
+        try:
+            nums = [float(x) for x in parts]
+            if len(nums) == 1:
+                parsed_data["relative_permittivity_mode"] = "constant"
+                parsed_data["relative_permittivity"] = nums[0]
+            elif len(nums) == 5:
+                parsed_data["relative_permittivity_mode"] = "temperature_dependent"
+                parsed_data["relative_permittivity"] = None
+                parsed_data["relative_permittivity_coeffs"] = nums
+            else:
+                raise ValueError("need 1 or 5 numeric values")
+        except Exception:
+            keyword = parts[0].lower() if len(parts) > 0 else ""
+            if keyword == "constant" and len(parts) >= 2:
+                try:
+                    parsed_data["relative_permittivity_mode"] = "constant"
+                    parsed_data["relative_permittivity"] = float(parts[1])
+                    parsed_data["relative_permittivity_coeffs"] = None
+                except Exception:
+                    print(f"ERROR: Cannot parse constant relative_permittivity in [ coulomb_global ] section in {file_path}.")
+                    quit()
+            elif keyword in ("temperature-dependent", "temperature_dependent", "td") and len(parts) >= 6:
+                try:
+                    parsed_data["relative_permittivity_mode"] = "temperature_dependent"
+                    parsed_data["relative_permittivity"] = None
+                    parsed_data["relative_permittivity_coeffs"] = [float(x) for x in parts[1:6]]
+                except Exception:
+                    print(f"ERROR: Cannot parse temperature-dependent relative_permittivity in [ coulomb_global ] section in {file_path}.")
+                    quit()
+            else:
+                print(f"ERROR: Cannot parse relative_permittivity in [ coulomb_global ] section in {file_path}. Use 1 number or 5 numbers (k_-1 k0 k1 k2 k3).")
+                quit()
+
+    if "simulation_setting" in sections:
+        allowed_policy = {"none", "forced", "recommended"}
+        for line in sections["simulation_setting"]:
+            parts = re.split(r'\s+', line.strip())
+            if len(parts) != 4:
+                print(f"ERROR: Cannot parse [ simulation_setting ] in {file_path}.")
+                print("       Each line must have: name value type_at_NVT type_at_NPT")
+                quit()
+            name, value, nvt_policy, npt_policy = parts
+            nvt_policy = nvt_policy.lower()
+            npt_policy = npt_policy.lower()
+            if nvt_policy not in allowed_policy or npt_policy not in allowed_policy:
+                print(f"ERROR: Invalid policy in [ simulation_setting ] in {file_path}.")
+                print("       The 3rd and 4th values must be one of: none, forced, recommended.")
+                quit()
+            parsed_data["simulation_settings"].append(
+                {
+                    "name": name,
+                    "value": value,
+                    "nvt_policy": nvt_policy,
+                    "npt_policy": npt_policy,
+                }
+            )
     
     
     # Parse moleculetype
@@ -178,6 +246,14 @@ def read_itp(file_path):
         parsed_data["moleculetype"] = sections["moleculetype"][0].split()
     
     if parsed_data["function_type_LJ"] == "Ashbaugh-Hatch" and parsed_data["function_type_Coulomb"] == "Debye-Huckel":
+        if "nonbond_global" not in sections or len(sections["nonbond_global"]) == 0:
+            print(f"ERROR: The itp file {file_path} may not include nonbond_global epsilon for Ashbaugh-Hatch.")
+            quit()
+        try:
+            parsed_data["epsilon"] = float(re.split(r'\s+', sections["nonbond_global"][0].strip())[0])
+        except Exception:
+            print(f"ERROR: Cannot parse epsilon in [ nonbond_global ] section in {file_path}.")
+            quit()
 
         # Parse atomtypes
         if "atomtypes" in sections:
@@ -290,6 +366,24 @@ def write_itp(file_path, topology:ITPTopology):
         itp_file.write(f"; LJ_function   Coulomb_function\n")
         itp_file.write(f"  {topology.function_type_LJ}   {topology.function_type_Coulomb}\n\n")
 
+        itp_file.write(f"[ coulomb_global ]\n")
+        if getattr(topology, "relative_permittivity_mode", "constant") == "temperature_dependent":
+            coeffs = topology.relative_permittivity_coeffs
+            itp_file.write(f"; relative_permittivity(T) = k_-1/T + k0 + k1*T + k2*T^2 + k3*T^3\n")
+            itp_file.write(f"  {coeffs[0]:.12g} {coeffs[1]:.12g} {coeffs[2]:.12g} {coeffs[3]:.12g} {coeffs[4]:.12g}\n\n")
+        else:
+            itp_file.write(f"; relative_permittivity\n")
+            itp_file.write(f"  {topology.relative_permittivity:.8f}\n\n")
+
+        if hasattr(topology, "simulation_settings") and len(topology.simulation_settings) > 0:
+            itp_file.write(f"[ simulation_setting ]\n")
+            itp_file.write(f"; name value type_at_NVT type_at_NPT\n")
+            for setting in topology.simulation_settings:
+                itp_file.write(
+                    f"  {setting['name']}  {setting['value']}  {setting['nvt_policy']}  {setting['npt_policy']}\n"
+                )
+            itp_file.write("\n")
+
         # Write atom type information
         itp_file.write(f"[ atomtypes ]\n")
 
@@ -311,7 +405,6 @@ def write_itp(file_path, topology:ITPTopology):
 
 
         elif topology.function_type_LJ == "Ashbaugh-Hatch":
-
             itp_file.write(f"; atom-abbr     atom-name  sigma   lambda   T0               T1              T2\n")
             for atomtype in topology.atomtypes:
                 itp_file.write(f"  {atomtype.abbr:12s}  {atomtype.name:7s}   "
@@ -320,6 +413,10 @@ def write_itp(file_path, topology:ITPTopology):
                            + f"{atomtype.T1:>13.9f}   "
                            + f"{atomtype.T2:>13.9f}   \n")
             itp_file.write("\n")
+
+            itp_file.write(f"[ nonbond_global ]\n")
+            itp_file.write(f"; epsilon(kJ/mol)\n")
+            itp_file.write(f"  {topology.epsilon:.8f}\n\n")
 
         # Write atom information
         itp_file.write(f"[ atoms ]\n")
@@ -338,7 +435,7 @@ def write_itp(file_path, topology:ITPTopology):
 
         if topology.bonds is not None:
             itp_file.write(f"[ bonds ]\n")
-            itp_file.write(f"; ai   aj   r0/nm k/(kJ/mol)\n")
+            itp_file.write(f"; ai   aj   r0/nm k/(kJ/mol)/nm^2\n")
 
             for bond in topology.bonds:
                 itp_file.write(f"  {(bond.a1 + 1):<3d}  {(bond.a2 + 1):<3d}  {bond.r0.value_in_unit(nanometer):.2f}  {bond.k.value_in_unit(kilojoule_per_mole/nanometer**2)}\n")
@@ -369,4 +466,3 @@ if __name__ == "__main__":
     file_path = sys.argv[1]
     result = read_itp(file_path)
     #print(json.dumps(result, indent=2))
-

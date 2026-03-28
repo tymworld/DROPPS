@@ -210,8 +210,9 @@ def modifyres(args):
             
             modifications.append([original, number, modified])
 
-        except:
+        except Exception as exc:
             print(f"ERROR: Cannot process modification {modification}.")
+            print(f"ERROR: Root cause: {exc}")
             quit()
 
     # We now generate a list of new atom types.

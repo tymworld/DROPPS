@@ -19,8 +19,9 @@ def genelastic(args):
     try:
         atoms, box = read_pdb(args.structure)
         print(f"## Open structure file {args.structure} which contains {len(atoms)} atoms.")
-    except:
+    except Exception as exc:
         print("## An exception occurred when trying to open structure file %s." % args.structure)
+        print(f"## Root cause: {exc}")
         quit()
 
     # We next get topology
@@ -32,16 +33,18 @@ def genelastic(args):
     try:
         topology = read_itp(args.topology)
         print(f"## Open topology file {args.topology} which contains {len(topology.atoms)} atoms.")
-    except:
+    except Exception as exc:
         print("## An exception occurred when trying to open topology file %s." % args.topology)
+        print(f"## Root cause: {exc}")
         quit()
 
     # We now get elastic profile file
 
     try:
         elastic_cluster_list = [[int(number) - 1 for number in line.strip().split()] for line in open(args.elastic_residues, 'r') if len(line) > 1]
-    except:
+    except Exception as exc:
         print("## An exception occurred when trying to open angle file %s." % args.angle_list)
+        print(f"## Root cause: {exc}")
         quit()
 
     print(f"## Reference structure contains {len(elastic_cluster_list)} clusters.")

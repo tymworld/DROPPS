@@ -69,8 +69,9 @@ def msd(args):
 
     try:
         trajectory = trajectory_class(args.run_input, args.index, args.input)
-    except:
+    except Exception as exc:
         print("## An exception occurred when trying to open trajectory file %s." % args.input)
+        print(f"## Root cause: {exc}")
         quit()
 
     # We treat time for analysis and generate frame for analysis'

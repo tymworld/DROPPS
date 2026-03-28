@@ -24,8 +24,9 @@ def addangle(args):
     # We now processed the angle list
     try:
         angle_lines = [line.strip().split() for line in open(args.angle_list, 'r') if len(line) > 1]
-    except:
+    except Exception as exc:
         print("## An exception occurred when trying to open angle file %s." % args.angle_list)
+        print(f"## Root cause: {exc}")
         quit()
     
     residue_NTD = topology.atoms[0].residueid

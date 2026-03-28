@@ -60,7 +60,8 @@ class indexGroups():
         self.index_groups = list()
         self.index_groups.append(index_singleGroup("System", list(range(0, self.atomNumber)), sorted=True))
 
-        for molname in set(self.atom_molnames):
+        # Keep first-seen molecule order from topology while removing duplicates.
+        for molname in dict.fromkeys(self.atom_molnames):
             ids = [i for i, name in enumerate(self.atom_molnames) if name == molname]
             self.index_groups.append(index_singleGroup(molname, ids))
     
@@ -176,7 +177,7 @@ class indexGroups():
             "",
             "Enter  :  list groups   'p': print groups   'l': Verbose list of chains   'q': save and quit",
             "'h'    :  show help     'name' nr:  name group    'splitch nr': split group nr by chains ",
-            "'mol'  name :  select molecule name      'group' nr   : select group index",
+            "'mol'  name :  select molecule name      'group' x    : select group index or name",
             "'res'  name :  select residue name       'index' nr   : select atom index (starts with 0)",
             "'abbr' name :  select atom abbreviation  'resid' nr   : select residue index",
             "                                         'chainid nr' : select chain index"
@@ -184,6 +185,8 @@ class indexGroups():
         print('\n'.join(help_lines))
 
     def __phraseSingleSelection(self, single_selection_string):
+        def normalize_group_name(name):
+            return name.strip().replace(" ", "_").lower()
         
         command2list = {"mol": self.atom_molnames,
                         "name": self.atom_names,
@@ -202,7 +205,24 @@ class indexGroups():
         rangestring = ''.join(single_selection_string.split(" ")[1:]).strip()
 
         if command == "group":
-            targets = parse_number_range(rangestring)
+            group_name_to_ids = defaultdict(list)
+            for group_id, group in enumerate(self.index_groups):
+                group_name_to_ids[normalize_group_name(group.name)].append(group_id)
+
+            targets = []
+            for token in [part.strip() for part in rangestring.split(",") if part.strip()]:
+                normalized_token = normalize_group_name(token)
+                if normalized_token in group_name_to_ids:
+                    targets.extend(group_name_to_ids[normalized_token])
+                    continue
+
+                if re.fullmatch(r'\d+(?:-\d+)?', token):
+                    targets.extend(parse_number_range(token))
+                    continue
+
+                print(f"Unknown group name or index range {token}.")
+                raise ValueError(f"Unknown group name or index range {token}.")
+
             index_in_groups = [self.index_groups[id].indices for id in targets]
             match = list(set(chain.from_iterable(index_in_groups)))
             print(f"## Find {len(match):>4d} matches for {command:<10s} {rangestring}.")
@@ -306,8 +326,9 @@ class indexGroups():
                 # Preparing to phrase selection string
                 self.__append_selection(command)
                     
-        except:
+        except Exception as exc:
             print(f"ERROR: Error in processing command \"{command}\".")
+            print(f"ERROR: Root cause: {exc}")
 
 
 def indices2string(indices: List[int], field_width = 6):

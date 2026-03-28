@@ -9,6 +9,9 @@
 #  LJ              Couloumb
    Wang-Frenkel    Debye-Huckel
 
+[ relative-permittivity ]
+    80
+
 [ residue-type ]
 #   abbr   name     mass       charges
     E      GLU      129.11     -0.75
@@ -133,5 +136,4 @@ E D R K I V L T H M G A C S P N Q F Y W Sp Tp Yp Ka Rm
 2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2
 2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2
 2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2  2
-
 

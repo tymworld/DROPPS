@@ -1,6 +1,7 @@
 import MDAnalysis as mda
 import numpy as np
 from openmm.unit import nanometer, picosecond, nanosecond
+import os
 
 from dropps.fileio.tpr_reader import read_tpr
 from dropps.share.indexing import indexGroups
@@ -54,16 +55,27 @@ class trajectory_class():
         
         if trajectory_path is not None:
 
+            trajectory_path = os.path.abspath(os.path.expanduser(trajectory_path))
+            if not os.path.isfile(trajectory_path):
+                raise FileNotFoundError(f"Trajectory file not found: {trajectory_path}")
+
             file_extention = splitext(trajectory_path)[1].lower()
 
             if file_extention == ".xtc":
                 print(f"Loading xtc trajectory file {trajectory_path} ...")
-                self.Universe.load_new(trajectory_path, in_memory=False)
+                try:
+                    self.Universe.load_new(trajectory_path, in_memory=False)
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Failed to read XTC trajectory '{trajectory_path}'. "
+                        "Please check whether the file is complete/corrupted and "
+                        "compatible with the provided topology."
+                    ) from exc
                 print(f"## Loaded trajectory file {trajectory_path} into Universe.")
                 print(f"## Assuming trajectory file in unit angstrom")
 
             else:
-                print(f"## ERROR: Known file extention of {trajectory_path}.")
+                print(f"## ERROR: Unknown file extension of {trajectory_path}.")
                 quit()
         
         # We generate information for each atoms.

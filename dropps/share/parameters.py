@@ -36,6 +36,8 @@ parameters_dict_template = {
     #"cutoff_coul_multi": 3.0,
     "cutoff_lj"   : 1.5,
     "cutoff_coul" : 1.5,
+    "shift_lj"    : True,
+    "shift_coul"  : True,
     "buffer"      : 0.5,
 
     # Force calculations
@@ -65,8 +67,9 @@ def getparameter(mdp_file):
                           line.strip().split("#")[0].split("=")[1].strip().replace("-", "_")
                           for line in open(mdp_file, 'r').readlines()
                           if len(line.strip().split()) > 0 and line[0] != '#'}
-    except:
+    except Exception as exc:
         print("ERROR: Cannot process parameter file %s." % mdp_file)
+        print(f"ERROR: Root cause: {exc}")
         quit()
         
     for param in raw_parameters.keys():
@@ -91,5 +94,4 @@ def getparameter(mdp_file):
 if __name__ == '__main__':
     print(getparameter("../templates/md.mdp"))
     
-
 

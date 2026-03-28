@@ -5,8 +5,9 @@ class tpr_content():
         try:
             f = open(tpr_path, "rb")
 
-        except:
+        except Exception as exc:
             print(f"ERROR: Cannot open tpr file {tpr_path}")
+            print(f"ERROR: Root cause: {exc}")
             quit()
         else:
             with f:

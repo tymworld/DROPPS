@@ -14,6 +14,31 @@ import math
 from pathlib import Path
 import os
 
+def _write_coulomb_global(itp_file, forcefield):
+    itp_file.write(f"[ coulomb_global ]\n")
+    if getattr(forcefield, "relative_permittivity_mode", "constant") == "temperature_dependent":
+        coeffs = forcefield.relative_permittivity_coeffs
+        itp_file.write(f"; relative_permittivity(T) = k_-1/T + k0 + k1*T + k2*T^2 + k3*T^3\n")
+        itp_file.write(f"  {coeffs[0]:.12g} {coeffs[1]:.12g} {coeffs[2]:.12g} {coeffs[3]:.12g} {coeffs[4]:.12g}\n\n")
+    else:
+        itp_file.write(f"; relative_permittivity\n")
+        itp_file.write(f"  {forcefield.relative_permittivity:.8f}\n\n")
+
+
+def _write_simulation_settings(itp_file, forcefield):
+    simulation_settings = getattr(forcefield, "simulation_settings", [])
+    if len(simulation_settings) == 0:
+        return
+
+    itp_file.write(f"[ simulation_setting ]\n")
+    itp_file.write(f"; name value type_at_NVT type_at_NPT\n")
+    for setting in simulation_settings:
+        itp_file.write(
+            f"  {setting['name']}  {setting['value']}  {setting['nvt_policy']}  {setting['npt_policy']}\n"
+        )
+    itp_file.write("\n")
+
+
 def pdb2cgps(args):
 
     first_residue_index = args.residue_index
@@ -240,8 +265,9 @@ def pdb2cgps(args):
         try:
             structure_pdb_file = open(args.input_pdb, 'r')
             print(f"## Open structure pdb file {args.input_pdb} which is assumed as all-atom configuration.")
-        except:
+        except Exception as exc:
             print("## An exception occurred when trying to open structure pdb file %s." % args.input_pdb)
+            print(f"## Root cause: {exc}")
             quit()
         
         CA_coordinates = [[float(line[30:38])/10.0, float(line[38:46])/10.0, float(line[46:54])/10.0]
@@ -311,6 +337,9 @@ def pdb2cgps(args):
                 itp_file.write(f"; LJ_function   Coulomb_function\n")
                 itp_file.write(f"  {forcefield.function_type_LJ}   {forcefield.function_type_Coulomb}\n\n")
 
+                _write_coulomb_global(itp_file, forcefield)
+                _write_simulation_settings(itp_file, forcefield)
+
                 # Write atom type information
                 itp_file.write(f"[ atomtypes ]\n")
                 itp_file.write(f"; atom-abbr     atom-name  sigma   lambda   T0               T1              T2\n")
@@ -321,6 +350,10 @@ def pdb2cgps(args):
                                 + f"{forcefield.abbr2tempcoff[abbr][1]:>13.9f}   "
                                 + f"{forcefield.abbr2tempcoff[abbr][2]:>13.9f}   \n")
                 itp_file.write("\n")
+
+                itp_file.write(f"[ nonbond_global ]\n")
+                itp_file.write(f"; epsilon(kJ/mol)\n")
+                itp_file.write(f"  {forcefield.epsilon:.8f}\n\n")
 
                 # Write atom information
                 itp_file.write(f"[ atoms ]\n")
@@ -334,7 +367,7 @@ def pdb2cgps(args):
 
                 # Write bond information
                 itp_file.write(f"[ bonds ]\n")
-                itp_file.write(f"; ai   aj   r0    k\n")
+                itp_file.write(f"; ai   aj   r0/nm k/(kJ/mol)/nm^2\n")
 
                 for index in range(len(sequence_abbreviation) - 1):
 
@@ -358,6 +391,9 @@ def pdb2cgps(args):
                 itp_file.write(f"[ function-type ]\n")
                 itp_file.write(f"; LJ_function   Coulomb_function\n")
                 itp_file.write(f"  {forcefield.function_type_LJ}   {forcefield.function_type_Coulomb}\n\n")
+
+                _write_coulomb_global(itp_file, forcefield)
+                _write_simulation_settings(itp_file, forcefield)
 
                 # Write atom type information
                 itp_file.write(f"[ atomtypes ]\n")
@@ -391,7 +427,7 @@ def pdb2cgps(args):
 
                 # Write bond information
                 itp_file.write(f"[ bonds ]\n")
-                itp_file.write(f"; ai   aj   r0    k\n")
+                itp_file.write(f"; ai   aj   r0/nm k/(kJ/mol)/nm^2\n")
 
                 for index in range(len(sequence_abbreviation) - 1):
 

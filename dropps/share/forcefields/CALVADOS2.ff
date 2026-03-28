@@ -1,0 +1,52 @@
+# CALVADOS2 forcefield for slab simulation
+
+[ function-type ]
+#  LJ              Couloumb
+   Ashbaugh-Hatch  Debye-Huckel
+
+[ residue-epsilon ]
+# epsilon for Ashbaugh-Hatch LJ in kJ/mol
+    0.83736
+
+[ relative-permittivity ]
+5321 233.76 -0.9297 0.001417 -0.0000008292
+
+[ simulation-setting ]
+# name         value  type_at_NVT       type_at_NPT
+  shift-lj     True   forced            forced
+  shift-coul   True   forced            forced
+  cutoff-lj    2      recommended       recommended
+  cutoff-coul  4      recommended       recommended
+
+[ residue-type ]
+#   abbr    name    sigma     lambda          mass          charges
+    R       ARG     0.656     0.730762476752  156.19        1.0
+    D       ASP     0.558     0.041604048061  115.09       -1.0
+    N       ASN     0.568     0.425585900979  114.10        0.0
+    E       GLU     0.592     0.000693546096  129.11       -1.0
+    K       LYS     0.636     0.179021173899  128.17        1.0
+    H       HIS     0.608     0.466366729056  137.14        0.0
+    Q       GLN     0.602     0.393431855106  128.13        0.0
+    S       SER     0.518     0.462541681161   87.08        0.0
+    C       CYS     0.548     0.561543509914  103.14        0.0
+    G       GLY     0.450     0.705884373367   57.05        0.0
+    T       THR     0.562     0.371316297627  101.11        0.0
+    A       ALA     0.504     0.274329796904   71.07        0.0
+    M       MET     0.618     0.530848113434  131.20        0.0
+    Y       TYR     0.646     0.977461144934  163.18        0.0
+    V       VAL     0.586     0.208376960817   99.13        0.0
+    W       TRP     0.678     0.989376474037  186.22        0.0
+    L       LEU     0.618     0.644000500778  113.16        0.0
+    I       ILE     0.618     0.542362361067  113.16        0.0
+    P       PRO     0.556     0.359312657636   97.12        0.0
+    F       PHE     0.636     0.867235898206  147.18        0.0
+
+[ bond ]
+# bond_name
+  CALVADOSBond
+# bond_length  k
+  0.38         8033
+# Terminal-1-residue
+R D N E K H Q S C G T A M Y V W L I P F
+# Terminal-2-residue
+R D N E K H Q S C G T A M Y V W L I P F

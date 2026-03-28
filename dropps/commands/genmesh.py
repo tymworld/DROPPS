@@ -29,8 +29,9 @@ def genmesh(args):
     try:
         molecule_list = [read_pdb(args.structure[index])[0] for index in range(structure_number)]
         molecule_number_list = args.number
-    except:
+    except Exception as exc:
         print("## An exception occurred when trying to open structure file.")
+        print(f"## Root cause: {exc}")
         quit()
 
     for molecule_index in range(structure_number):

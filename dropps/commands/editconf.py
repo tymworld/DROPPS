@@ -72,7 +72,7 @@ def editconf(args):
 
     if expand_x:
         if output_x <= raw_x:
-            print("ERROR: Cannot expand x axis from %d to a smaller/equal value of %d." % (raw_x, output_x))
+            print(f"ERROR: Cannot expand x axis from {raw_x} to a smaller/equal value of {output_x}.")
             quit()
         else:
             new_coordinates[:,0] = pbc_treated_coordinates[:,0]

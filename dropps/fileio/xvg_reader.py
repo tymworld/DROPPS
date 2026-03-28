@@ -3,8 +3,9 @@ import numpy as np
 def read_xvg(xvg_path):
     try:
         data = np.loadtxt(xvg_path, commens=('#', '@'))
-    except:
+    except Exception as exc:
         print(f"ERROR: Cannot load xvg file {xvg_path}.")
+        print(f"ERROR: Root cause: {exc}")
     return data
 
 def write_xvg(file_name, x, y_list, title="Plot", xlabel="X", ylabel="Y", legends=None):

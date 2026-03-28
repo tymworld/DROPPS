@@ -52,6 +52,8 @@ nstlist     = 10       # Frequency to update the neighbor list
 #cutoff-coul-multi = 3.0       # Appliable only when cutoff-scheme-coul = dynamic
 cutoff-lj   = 1.5      # Default cutoff value for LJ interaction,      only when cutoff-scheme-lj = static
 cutoff-coul = 1.5      # Default cutoff value for Coulomb interaction, only when cutoff-scheme-coul = static
+shift-lj    = False    # Shift LJ potential so U(cutoff-lj)=0
+shift-coul  = False    # Shift Coulomb potential so U(cutoff-coul)=0
 buffer      = 0.5      # Buffer for neighbor searching
 
 # Force calculations

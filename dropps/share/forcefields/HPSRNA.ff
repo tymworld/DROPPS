@@ -4,6 +4,13 @@
 #  LJ              Couloumb
    Ashbaugh-Hatch  Debye-Huckel
 
+[ relative-permittivity ]
+    80
+
+[ residue-epsilon ]
+# epsilon for Ashbaugh-Hatch LJ in kJ/mol
+    0.83736
+
 [ residue-type ]
 #   abbr    name    sigma     lambda  mass          charges
     a       ADE     0.844    -0.054   329.200      -1.0

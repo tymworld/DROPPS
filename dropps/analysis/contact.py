@@ -235,10 +235,10 @@ def getargs_contact(argv):
     parser.add_argument('-n', '--index', type=str, required=False,
                         help="Index file containing non-default groups.")
     
-    parser.add_argument('-ref', '--reference-group', type=int,
+    parser.add_argument('-ref', '--reference-group', type=str,
                         help="Reference group of atoms (x axis of the contact map).")
     
-    parser.add_argument('-sel', '--selection-group', type=int,
+    parser.add_argument('-sel', '--selection-group', type=str,
                         help="Selection group of atoms (y axis of the contact map).")
     
     parser.add_argument('-cs', '--cutoff-scheme', type=str, choices=["global", "residue"], required=True,
@@ -316,8 +316,9 @@ def contact(args):
 
     try:
         trajectory = trajectory_class(args.run_input, args.index, args.input)
-    except:
+    except Exception as exc:
         print("## An exception occurred when trying to open trajectory file %s." % args.input)
+        print(f"## Root cause: {exc}")
         quit()
     
     trajectory.Universe.trajectory.add_transformations(wrap(trajectory.Universe.atoms))

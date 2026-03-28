@@ -25,12 +25,12 @@ from dropps.fileio.itp_reader import read_itp
 from dropps.fileio.pdb_reader import read_pdb
 import openmm
 import openmm.app
-from openmm.unit import nanometer, kilojoule_per_mole, moles, liter, kilocalorie_per_mole, radian, nanometer, dimensionless
+from openmm.unit import nanometer, kilojoule_per_mole, moles, liter, radian, nanometer, dimensionless
 import math
 import copy
 
 
-from dropps.hp.constants import kappa_coefficient, relative_permittivity, k0
+from dropps.hp.constants import kappa_coefficient, k0
 
 import numpy as np
 
@@ -105,6 +105,102 @@ def combine_topologies(topology_list):
 # typelist_nb, sigma_matrix, mu_matrix, epsilon_matrix = combine_topologies(topology_list)
 
 
+def _normalize_setting_name(name):
+    return name.strip().replace("-", "_").lower()
+
+
+def _convert_expected_value(raw_value, actual_value):
+    if isinstance(actual_value, bool):
+        raw_lower = raw_value.strip().lower()
+        if raw_lower == "true":
+            return True
+        if raw_lower == "false":
+            return False
+        raise ValueError("must be True or False for boolean parameter")
+    if isinstance(actual_value, int) and not isinstance(actual_value, bool):
+        return int(raw_value)
+    if isinstance(actual_value, float):
+        return float(raw_value)
+    if isinstance(actual_value, str):
+        return raw_value.strip().replace("-", "_")
+    return type(actual_value)(raw_value)
+
+
+def _is_value_match(expected_value, actual_value):
+    if isinstance(expected_value, float) and isinstance(actual_value, float):
+        return math.isclose(expected_value, actual_value, rel_tol=1e-9, abs_tol=1e-12)
+    return expected_value == actual_value
+
+
+def _validate_simulation_settings(loaded_topologies, parameters):
+    all_settings = []
+    seen = set()
+    for topology in loaded_topologies:
+        for setting in getattr(topology, "simulation_settings", []):
+            key = (
+                setting["name"],
+                setting["value"],
+                setting["nvt_policy"],
+                setting["npt_policy"],
+            )
+            if key not in seen:
+                seen.add(key)
+                all_settings.append(setting)
+
+    if len(all_settings) == 0:
+        return
+
+    key_lookup = {_normalize_setting_name(k): k for k in parameters.keys()}
+    is_npt = parameters.get("pcoulp", False) is True
+    mode_name = "NPT" if is_npt else "NVT"
+
+    for setting in all_settings:
+        policy = setting["npt_policy"] if is_npt else setting["nvt_policy"]
+        if policy == "none":
+            continue
+
+        normalized_name = _normalize_setting_name(setting["name"])
+        if normalized_name not in key_lookup:
+            if policy == "forced":
+                print(
+                    f"ERROR: [simulation-setting] Forced {mode_name} setting '{setting['name']}' "
+                    "does not exist in mdp parameters."
+                )
+                quit()
+            print(
+                f"WARNING: [simulation-setting] RECOMMENDED {mode_name} setting '{setting['name']}' "
+                "does not exist in mdp parameters."
+            )
+            continue
+
+        parameter_key = key_lookup[normalized_name]
+        actual_value = parameters[parameter_key]
+
+        try:
+            expected_value = _convert_expected_value(setting["value"], actual_value)
+        except Exception as exc:
+            print(
+                f"ERROR: [simulation-setting] Cannot parse expected value '{setting['value']}' "
+                f"for mdp key '{parameter_key}'. Root cause: {exc}"
+            )
+            quit()
+
+        if _is_value_match(expected_value, actual_value):
+            continue
+
+        if policy == "forced":
+            print(
+                f"ERROR: [simulation-setting] Forced {mode_name} setting mismatch for '{parameter_key}': "
+                f"expected '{expected_value}', but mdp has '{actual_value}'."
+            )
+            quit()
+        if policy == "recommended":
+            print(
+                f"WARNING: [simulation-setting] VERY CLEAR WARNING: recommended {mode_name} setting mismatch "
+                f"for '{parameter_key}': expected '{expected_value}', but mdp has '{actual_value}'."
+            )
+
+
 def build_system(pdb_file, top_file, parameters):
 
     print("######## Start of system building ########")
@@ -143,6 +239,8 @@ def build_system(pdb_file, top_file, parameters):
             print(f"## All input topology files use forcefield function types: LJ-{forcefield_function_type_LJ[0]}, Coulomb-{forcefield_function_type_Coulomb[0]}.")
             forcefield_function_type_LJ = forcefield_function_type_LJ[0]
             forcefield_function_type_Coulomb = forcefield_function_type_Coulomb[0]
+
+        _validate_simulation_settings(loaded_topologies, parameters)
 
         molecule_number_list = [int(molecule[1]) for molecule in molecule_with_number]
         print("## The following ITP files are read and loaded.")
@@ -342,6 +440,7 @@ def build_system(pdb_file, top_file, parameters):
     print(f"## Exclusion list contains {len(exclusion_list)} pairs.")
 
     # We add LJ and coulomb interaction
+    print(f"## Nonbonded options: shift_lj = {parameters['shift_lj']}, shift_coul = {parameters['shift_coul']}.")
 
     if parameters["vdwtype"] == "pLJ":
 
@@ -349,20 +448,40 @@ def build_system(pdb_file, top_file, parameters):
             print(f"## ERROR: MDP file comanding pLJ for vdwtype but topology is not Ashbaugh-Hatch type.")
             quit()
 
-        lj_force = openmm.CustomNonbondedForce("""
-        step(rc - r)*(lj + (1 - lambda)*epsilon) + step(r - rc)*(lambda*lj);
-        lj = 4*epsilon*((sigma/r)^12 - (sigma/r)^6);
-        rc = 2^(1/6)*sigma;
-        sigma = 0.5*(sigma1 + sigma2);
-        lambda = 0.5*(lambda1 + lambda2);
-        """)
+        epsilon_list = list(set([top.epsilon for top in loaded_topologies]))
+        if len(epsilon_list) != 1:
+            print("ERROR: Different Ashbaugh-Hatch epsilon values found in input topology files.")
+            quit()
+        epsilon_lj = epsilon_list[0]
+
+        if parameters["shift_lj"]:
+            lj_force = openmm.CustomNonbondedForce("""
+            step(cutoff - r)*(ah - ah_cut);
+            ah = step(rc_min - r)*(lj + (1 - lambda)*epsilon) + step(r - rc_min)*(lambda*lj);
+            ah_cut = step(rc_min - cutoff)*(lj_cut + (1 - lambda)*epsilon) + step(cutoff - rc_min)*(lambda*lj_cut);
+            lj = 4*epsilon*((sigma/r)^12 - (sigma/r)^6);
+            lj_cut = 4*epsilon*((sigma/cutoff)^12 - (sigma/cutoff)^6);
+            rc_min = 2^(1/6)*sigma;
+            sigma = 0.5*(sigma1 + sigma2);
+            lambda = 0.5*(lambda1 + lambda2);
+            """)
+        else:
+            lj_force = openmm.CustomNonbondedForce("""
+            step(rc_min - r)*(lj + (1 - lambda)*epsilon) + step(r - rc_min)*(lambda*lj);
+            lj = 4*epsilon*((sigma/r)^12 - (sigma/r)^6);
+            rc_min = 2^(1/6)*sigma;
+            sigma = 0.5*(sigma1 + sigma2);
+            lambda = 0.5*(lambda1 + lambda2);
+            """)
 
         print(f"## LJ: LJ interaction will be calculated using the following equation:")
         print(f"## {lj_force.getEnergyFunction()}")
 
         lj_force.addPerParticleParameter("sigma")
         lj_force.addPerParticleParameter("lambda")
-        lj_force.addGlobalParameter("epsilon", defaultValue=0.2 * kilocalorie_per_mole)
+        lj_force.addGlobalParameter("epsilon", defaultValue=epsilon_lj * kilojoule_per_mole)
+        if parameters["shift_lj"]:
+            lj_force.addGlobalParameter("cutoff", defaultValue=parameters["cutoff_lj"] * nanometer)
 
         for i in range(lj_force.getNumGlobalParameters()):
             print(f"## LJ: Global parameter for LJ interaction, {lj_force.getGlobalParameterName(i)}, "\
@@ -405,18 +524,36 @@ def build_system(pdb_file, top_file, parameters):
             print(f"## ERROR: MDP file commanding MPiPi for vdwtype but topology is not Wang–Frenkel type.")
             quit()
         
-        lj_force = openmm.CustomNonbondedForce("""
-        epsilon * alpha * part1 * part2 ^ (2 * nu);
-        part1 = (sigma / r) ^ (2 * mu) - 1;
-        part2 = (R / r) * (2 * mu) - 1;
-        alpha = 2 * nu * (R / sigma) ^ (2 * mu) * (upper / lower) ^ (2 * nu + 1);
-        upper = 2 * nu + 1;
-        lower = 2 * nu * ((R / sigma) ^ (2 * mu) - 1);
-        R = RScale * sigma;
-        epsilon=eps_unit * epsilon_Table(type1,type2); 
-        sigma=sigma_unit * sigma_Table(type1,type2);
-        mu=mu_unit * mu_Table(type1,type2)                         
-        """)
+        if parameters["shift_lj"]:
+            lj_force = openmm.CustomNonbondedForce("""
+            step(cutoff - r) * (wf - wf_cut);
+            wf = epsilon * alpha * part1 * part2 ^ (2 * nu);
+            wf_cut = epsilon * alpha * part1_cut * part2_cut ^ (2 * nu);
+            part1 = (sigma / r) ^ (2 * mu) - 1;
+            part2 = (R / r) * (2 * mu) - 1;
+            part1_cut = (sigma / cutoff) ^ (2 * mu) - 1;
+            part2_cut = (R / cutoff) * (2 * mu) - 1;
+            alpha = 2 * nu * (R / sigma) ^ (2 * mu) * (upper / lower) ^ (2 * nu + 1);
+            upper = 2 * nu + 1;
+            lower = 2 * nu * ((R / sigma) ^ (2 * mu) - 1);
+            R = RScale * sigma;
+            epsilon = eps_unit * epsilon_Table(type1,type2); 
+            sigma = sigma_unit * sigma_Table(type1,type2);
+            mu = mu_unit * mu_Table(type1,type2)                         
+            """)
+        else:
+            lj_force = openmm.CustomNonbondedForce("""
+            epsilon * alpha * part1 * part2 ^ (2 * nu);
+            part1 = (sigma / r) ^ (2 * mu) - 1;
+            part2 = (R / r) * (2 * mu) - 1;
+            alpha = 2 * nu * (R / sigma) ^ (2 * mu) * (upper / lower) ^ (2 * nu + 1);
+            upper = 2 * nu + 1;
+            lower = 2 * nu * ((R / sigma) ^ (2 * mu) - 1);
+            R = RScale * sigma;
+            epsilon=eps_unit * epsilon_Table(type1,type2); 
+            sigma=sigma_unit * sigma_Table(type1,type2);
+            mu=mu_unit * mu_Table(type1,type2)                         
+            """)
 
         print(f"## LJ: LJ interaction will be calculated using the following equation:")
         print(f"## {lj_force.getEnergyFunction()}")
@@ -427,6 +564,8 @@ def build_system(pdb_file, top_file, parameters):
 
         lj_force.addGlobalParameter("RScale", defaultValue=3)
         lj_force.addGlobalParameter("nu", defaultValue=1)
+        if parameters["shift_lj"]:
+            lj_force.addGlobalParameter("cutoff", defaultValue=parameters["cutoff_lj"] * nanometer)
 
         #lj_force.addPerParticleParameter("epsilon")
         #lj_force.addPerParticleParameter("sigma")
@@ -478,18 +617,57 @@ def build_system(pdb_file, top_file, parameters):
             print(f"## ERROR: MDP file commanding yukawa for coulombtype but topology is not Debye-Huckel type but {forcefield_function_type_Coulomb}.")
             quit()
 
-        coulomb_force = openmm.CustomNonbondedForce("""
-        k/D*q1*q2*exp(-r/debye)/r
-        """)
+        if parameters["shift_coul"]:
+            coulomb_force = openmm.CustomNonbondedForce("""
+            step(cutoff - r) * k / D * q1 * q2 * (exp(-r/debye) / r - exp(-cutoff/debye) / cutoff)
+            """)
+        else:
+            coulomb_force = openmm.CustomNonbondedForce("""
+            k/D*q1*q2*exp(-r/debye)/r
+            """)
 
         print(f"## Coulomb: Coulomb interaction will be calculated using the following equation:")
         print(f"## {coulomb_force.getEnergyFunction()}")
 
         coulomb_force.addGlobalParameter("k", k0)
+        rp_signatures = []
+        for top in loaded_topologies:
+            mode = getattr(top, "relative_permittivity_mode", "constant")
+            if mode == "temperature_dependent":
+                coeffs = tuple(getattr(top, "relative_permittivity_coeffs", []))
+                rp_signatures.append(("temperature_dependent", coeffs))
+            else:
+                rp_signatures.append(("constant", float(top.relative_permittivity)))
+
+        rp_unique = list(set(rp_signatures))
+        if len(rp_unique) != 1:
+            print("ERROR: Different relative_permittivity settings found in input topology files.")
+            quit()
+
+        temperature = parameters["production_temperature"]
+        rp_mode, rp_value = rp_unique[0]
+        if rp_mode == "temperature_dependent":
+            k_minus_1, k0_rp, k1_rp, k2_rp, k3_rp = rp_value
+            relative_permittivity = (
+                k_minus_1 / temperature +
+                k0_rp +
+                k1_rp * temperature +
+                k2_rp * temperature * temperature +
+                k3_rp * temperature * temperature * temperature
+            )
+            print(f"## Coulomb: Relative permittivity from temperature-dependent model at T={temperature} K gives D={relative_permittivity}.")
+        else:
+            relative_permittivity = rp_value
+            print(f"## Coulomb: Relative permittivity from constant model gives D={relative_permittivity}.")
+
+        if relative_permittivity <= 0:
+            print(f"ERROR: relative_permittivity must be positive, got {relative_permittivity}.")
+            quit()
         coulomb_force.addGlobalParameter("D", relative_permittivity)
+        if parameters["shift_coul"]:
+            coulomb_force.addGlobalParameter("cutoff", parameters["cutoff_coul"] * nanometer)
 
         salt_conc = parameters["salt_conc"]
-        temperature = parameters["production_temperature"]
         debye_length = math.sqrt(relative_permittivity * temperature / salt_conc) * kappa_coefficient * nanometer
         coulomb_force.addGlobalParameter("debye", debye_length / nanometer)
 

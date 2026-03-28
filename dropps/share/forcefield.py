@@ -10,9 +10,50 @@ forcefields_files = glob.glob(f"{forcefields_directory}/*.ff")
 pattern = r'(.*?)\.ff'
 forcefield_list = [os.path.basename(re.search(pattern, path).group(1)) for path in forcefields_files]
 
+def _parse_relative_permittivity_from_sections(sections):
+    # Backward-compatible default
+    model = "constant"
+    value = 80.0
+    coeffs = None
+
+    if "relative_permittivity" not in sections or len(sections["relative_permittivity"]) == 0:
+        return model, value, coeffs
+
+    line = sections["relative_permittivity"][0].strip()
+    parts = line.split()
+
+    # Try pure numeric input first:
+    # 1 number  => constant
+    # 5 numbers => temperature-dependent: k_-1, k0, k1, k2, k3
+    try:
+        nums = [float(x) for x in parts]
+        if len(nums) == 1:
+            return "constant", nums[0], None
+        if len(nums) == 5:
+            return "temperature_dependent", None, nums
+    except Exception:
+        pass
+
+    # Also support labeled forms for convenience.
+    keyword = parts[0].lower()
+    if keyword == "constant" and len(parts) >= 2:
+        try:
+            return "constant", float(parts[1]), None
+        except Exception:
+            pass
+    if keyword in ("temperature-dependent", "temperature_dependent", "td") and len(parts) >= 6:
+        try:
+            return "temperature_dependent", None, [float(x) for x in parts[1:6]]
+        except Exception:
+            pass
+
+    print("ERROR: Cannot parse [ relative-permittivity ] section in forcefield file. Use 1 number (constant) or 5 numbers (k_-1 k0 k1 k2 k3).")
+    quit()
+
 class forcefield_top_WF_DH:
     def __init__(self, abbr, abbr2aa, abbr2original, abbrs2epsilon, abbrs2sigma, abbrs2mu, 
-                 abbr2mass, abbr2charge, bondtypes, abbr2bondtypeindex, bond2param):
+                 abbr2mass, abbr2charge, relative_permittivity_mode, relative_permittivity, relative_permittivity_coeffs,
+                 bondtypes, abbr2bondtypeindex, bond2param, simulation_settings):
         self.function_type_LJ = "Wang-Frenkel"
         self.function_type_Coulomb = "Debye-Huckel"
         self.abbr = abbr
@@ -23,14 +64,19 @@ class forcefield_top_WF_DH:
         self.abbrs2mu = abbrs2mu
         self.abbr2mass = abbr2mass
         self.abbr2charge = abbr2charge
+        self.relative_permittivity_mode = relative_permittivity_mode
+        self.relative_permittivity = relative_permittivity
+        self.relative_permittivity_coeffs = relative_permittivity_coeffs
         self.bondtypes = bondtypes
         self.abbr2bondtypeindex = abbr2bondtypeindex
         self.abbr2bondtype = {abbr:self.bondtypes[self.abbr2bondtypeindex[abbr]] for abbr in self.abbr2bondtypeindex.keys()}
         self.bond2param = bond2param
+        self.simulation_settings = simulation_settings
 
 class forcefield_top_AH_DH:
-    def __init__(self, abbr, abbr2aa, abbr2original, abbr2sigma, abbr2lambda, abbr2mass, abbr2charge, abbr2tempcoff,
-                 bondtypes, abbr2bondtypeindex, bond2param, modifications):
+    def __init__(self, abbr, abbr2aa, abbr2original, abbr2sigma, abbr2lambda, epsilon, abbr2mass, abbr2charge, abbr2tempcoff,
+                 relative_permittivity_mode, relative_permittivity, relative_permittivity_coeffs,
+                 bondtypes, abbr2bondtypeindex, bond2param, modifications, simulation_settings):
         self.function_type_LJ = "Ashbaugh-Hatch"
         self.function_type_Coulomb = "Debye-Huckel"
         self.abbr = abbr
@@ -38,14 +84,51 @@ class forcefield_top_AH_DH:
         self.abbr2original = abbr2original
         self.abbr2sigma = abbr2sigma
         self.abbr2lambda = abbr2lambda
+        self.epsilon = epsilon
         self.abbr2mass = abbr2mass
         self.abbr2charge = abbr2charge
         self.abbr2tempcoff = abbr2tempcoff
+        self.relative_permittivity_mode = relative_permittivity_mode
+        self.relative_permittivity = relative_permittivity
+        self.relative_permittivity_coeffs = relative_permittivity_coeffs
         self.bondtypes = bondtypes
         self.abbr2bondtypeindex = abbr2bondtypeindex
         self.abbr2bondtype = {abbr:self.bondtypes[self.abbr2bondtypeindex[abbr]] for abbr in self.abbr2bondtypeindex.keys()}
         self.bond2param = bond2param
         self.modifications = modifications
+        self.simulation_settings = simulation_settings
+
+
+def _parse_simulation_settings_from_sections(sections):
+    settings = []
+    if "simulation_setting" not in sections:
+        return settings
+
+    allowed_policy = {"none", "forced", "recommended"}
+    for line in sections["simulation_setting"]:
+        parts = line.strip().split()
+        if len(parts) != 4:
+            print("ERROR: Cannot parse [ simulation-setting ] in forcefield file. Each line must have 4 values:")
+            print("       name value type_at_NVT type_at_NPT")
+            quit()
+
+        name, value, nvt_policy, npt_policy = parts
+        nvt_policy = nvt_policy.lower()
+        npt_policy = npt_policy.lower()
+        if nvt_policy not in allowed_policy or npt_policy not in allowed_policy:
+            print("ERROR: Invalid policy in [ simulation-setting ] section.")
+            print("       The 3rd and 4th values must be one of: none, forced, recommended.")
+            quit()
+
+        settings.append(
+            {
+                "name": name,
+                "value": value,
+                "nvt_policy": nvt_policy,
+                "npt_policy": npt_policy,
+            }
+        )
+    return settings
 
 def read_and_split_sections(filename):
     sections = {}
@@ -103,6 +186,8 @@ def getff_WF_DH(sections):
     abbrs2mu = {}
     abbr2mass = {}
     abbr2charge = {}
+    relative_permittivity_mode, relative_permittivity, relative_permittivity_coeffs = _parse_relative_permittivity_from_sections(sections)
+    simulation_settings = _parse_simulation_settings_from_sections(sections)
 
     # Check for 'residue_type' section
     if 'residue_type' not in sections:
@@ -271,7 +356,8 @@ def getff_WF_DH(sections):
         abbr2bondtypeindex.update(abbr2bondtype_temp)
     
     return forcefield_top_WF_DH(abbr, abbr2aa, abbr2original, abbrs2epsilon, abbrs2sigma, abbrs2mu, \
-                 abbr2mass, abbr2charge, bondtypes, abbr2bondtypeindex, bond2param)
+                 abbr2mass, abbr2charge, relative_permittivity_mode, relative_permittivity, relative_permittivity_coeffs,
+                 bondtypes, abbr2bondtypeindex, bond2param, simulation_settings)
 
 
 def getff_AH_DH(sections):
@@ -293,6 +379,11 @@ def getff_AH_DH(sections):
     abbr2charge = {}
     abbr2tempcoff = {}
     modifications = {}
+    epsilon = None
+    relative_permittivity_mode = "constant"
+    relative_permittivity = 80.0
+    relative_permittivity_coeffs = None
+    simulation_settings = _parse_simulation_settings_from_sections(sections)
 
     # Check whether there is temperature coefficients
     temperature_coeff = dict()
@@ -309,6 +400,17 @@ def getff_AH_DH(sections):
     if 'residue_type' not in sections:
         print(f"ERROR: The forcefield file may not include any residues.")
         quit()
+
+    if "residue_epsilon" not in sections or len(sections["residue_epsilon"]) == 0:
+        print("ERROR: Ashbaugh-Hatch forcefield file must include [ residue-epsilon ] with a single epsilon value in kJ/mol.")
+        quit()
+    try:
+        epsilon = float(sections["residue_epsilon"][0].split()[0])
+    except Exception:
+        print("ERROR: Cannot parse epsilon in [ residue-epsilon ] section for Ashbaugh-Hatch forcefield.")
+        quit()
+
+    relative_permittivity_mode, relative_permittivity, relative_permittivity_coeffs = _parse_relative_permittivity_from_sections(sections)
 
     # Iterate over lines in the 'residue_type' section to get residue information
     for line in sections['residue_type']:
@@ -451,9 +553,10 @@ def getff_AH_DH(sections):
         abbr2bondtypeindex.update(abbr2bondtype_temp)
 
 
-    return forcefield_top_AH_DH(abbr, abbr2aa, abbr2original, abbr2sigma, abbr2lambda, 
+    return forcefield_top_AH_DH(abbr, abbr2aa, abbr2original, abbr2sigma, abbr2lambda, epsilon,
                           abbr2mass, abbr2charge, abbr2tempcoff,
-                          bondtypes, abbr2bondtypeindex, bond2param, modifications)
+                          relative_permittivity_mode, relative_permittivity, relative_permittivity_coeffs,
+                          bondtypes, abbr2bondtypeindex, bond2param, modifications, simulation_settings)
     
 
 if __name__ == '__main__':

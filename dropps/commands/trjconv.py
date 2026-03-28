@@ -64,8 +64,9 @@ def trjconv(args):
 
     try:
         trajectory = trajectory_class(args.run_input, args.index, args.input)
-    except:
+    except Exception as exc:
         print("## An exception occurred when trying to open trajectory file %s." % args.input)
+        print(f"## Root cause: {exc}")
         quit()
 
     start_frame, end_frame, interval_frame = trajectory.time2frame(args.start_time, args.end_time, args.delta_time)
