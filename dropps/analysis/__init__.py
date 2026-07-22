@@ -11,6 +11,9 @@ from .extract import extract_commands
 from .msd import msd_commands
 from .assembly import assembly_commands
 from .contact import contact_commands
+from .contact_ng import contact_ng_commands
+from .timecorr import timecorr_commands
 from .pdb2bond import pdb2bond_commands
 from .contact_statistic import contact_statistic_commands
+from .surface_tension import surface_tension_commands
 #from .sasa_mdtraj import sasa_commands

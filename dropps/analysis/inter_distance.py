@@ -16,7 +16,7 @@ warnings.filterwarnings("ignore", category=BiopythonDeprecationWarning)
 
 from MDAnalysis.transformations import unwrap
 
-prog = "inter_distance"
+prog = "odist"
 desc = '''This program calculate the inter-chain distance profiles of atom pair.'''
 
 def getargs_inter_distance(argv):
@@ -95,7 +95,7 @@ def inter_distance(args):
     
     if args.selection is not None:
         print(f"## Will use group {args.selection} for distance calculations.")
-        selection = trajectory.getselection(f"group {args.selection}")
+        selection = trajectory.getSelection(f"group {args.selection}")
         selection_name = f"group{args.selection}"
     else:
         trajectory.index.print_all()

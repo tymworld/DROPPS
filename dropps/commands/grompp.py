@@ -46,7 +46,7 @@ def grompp(args):
 
     print(f"## Write run time files to {output_tpr}.")
 
-prog = "mdrun"
+prog = "grompp"
 desc = '''This program initates and runs an molecular dynamics simulation.'''
 
 def getargs_grompp(argv):
@@ -54,9 +54,9 @@ def getargs_grompp(argv):
     parser = ArgumentParser(prog=prog, description=desc)
 
     parser.add_argument('-f', '--structure', type=str, required=True, 
-                        help="GSD file containing the initial configuration of the system.")
+                        help="PDB file containing the initial configuration of the system.")
     parser.add_argument('-p', '--topology', type=str, required=True, 
-                        help="GSD file containing the initial configuration of the system.")
+                        help="TOP file containing topology and included ITP files.")
     parser.add_argument('-m', '--parameter', type=str, required=True,
                         help="Parameter file (mdp) for this simulation.")
     parser.add_argument('-o', '--output', type=str, required=True,

@@ -1,4 +1,10 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:conda",
-    "python-envs.defaultPackageManager": "ms-python.python:conda"
+    "python-envs.defaultPackageManager": "ms-python.python:conda",
+    "chat.tools.terminal.autoApprove": {
+        "/^python -m py_compile dropps/analysis/timecorr\\.py$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
 }

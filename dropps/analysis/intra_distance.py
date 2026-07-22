@@ -16,7 +16,7 @@ warnings.filterwarnings("ignore", category=BiopythonDeprecationWarning)
 
 from MDAnalysis.transformations import unwrap
 
-prog = "intra_distance"
+prog = "idist"
 desc = '''This program calculate the intra-chain distance profiles of a number of atom pairs.'''
 
 def getargs_intra_distance(argv):
@@ -90,8 +90,8 @@ def intra_distance(args):
 
     if args.selection is not None:
         print(f"## Will use groups {','.join([f"{i}" for i in args.selection])} for distance calculations.")
-        groups = [trajectory.getSelection(f"group {gid}")[0] for gid in args.selection_calculate]
-        groups_names = [f"group{i}" for i in args.selection_calculate]
+        groups = [trajectory.getSelection(f"group {gid}")[0] for gid in args.selection]
+        groups_names = [f"group{i}" for i in args.selection]
     else:
         trajectory.index.print_all()
         groups, groups_names = trajectory.getSelection_interactive_multiple("distance calculation pairs")

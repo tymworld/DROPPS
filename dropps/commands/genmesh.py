@@ -1,4 +1,4 @@
-# genmesh tool in cgps.ng package by Yiming Tang @ Fudan
+# genmesh tool in dps package by Yiming Tang @ Fudan
 # Development started on June 6 2025
 
 from argparse import ArgumentParser
@@ -295,4 +295,3 @@ def getargs_genmesh(argv):
 
 from dropps.share.command_class import single_command
 genmesh_commands = single_command("genmesh", getargs_genmesh, genmesh, desc)
-

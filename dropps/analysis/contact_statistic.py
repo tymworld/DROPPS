@@ -52,8 +52,11 @@ known_grouping_schemes = {
     }
 }
 
-epilog = f"Known grouping schemes:\n{''.join([f'  {k}: ' + ', '.join([f'{subk} ({",".join(v[1])})' for subk, v in v.items()]) + '\n' 
-                                        for k, v in known_grouping_schemes.items()])}"
+epilog_lines = []
+for scheme_name, scheme in known_grouping_schemes.items():
+    scheme_details = ', '.join([f'{subk} ({",".join(residues)})' for subk, (abbreviation, residues) in scheme.items()])
+    epilog_lines.append(f'  {scheme_name}: {scheme_details}')
+epilog = 'Known grouping schemes:\n' + '\n'.join(epilog_lines)
 
 full_desc = desc + '\n\n' + epilog
 
@@ -86,6 +89,9 @@ def getargs_contact_statistic(argv):
     
     parser.add_argument('-gf', '--group-file', type=str, default=None,
                         help='Custom grouping scheme file. Each line defines a group: GroupName Abbreviation Residue1 Residue2 ...')
+
+    parser.add_argument('-ag', '--aggregate', type=str, choices=['sum', 'average'], default='sum',
+                        help='Aggregation method for grouped contact statistics. Choices: sum, average. Default: sum.')
     
     args = parser.parse_args(argv)
 
@@ -247,6 +253,7 @@ def contact_statistic(args):
 
     # We now generate contact numbers between each type of residues
     contact_counts = {}
+    contact_pair_counts = {}
     for i in range(contact_map.shape[0]):
         ref_group_name, ref_abbr = reference_residue_to_group[i]
         for j in range(contact_map.shape[1]):
@@ -254,11 +261,20 @@ def contact_statistic(args):
             key = (ref_abbr, sel_abbr)
             if key not in contact_counts:
                 contact_counts[key] = 0
+                contact_pair_counts[key] = 0
             contact_counts[key] += contact_map[i, j]
+            contact_pair_counts[key] += 1
+
+    if args.aggregate == 'average':
+        for key in contact_counts:
+            contact_counts[key] /= contact_pair_counts[key]
+        print("## Aggregation method: average.")
+    else:
+        print("## Aggregation method: sum.")
     
     # We generate contact matrix
     residue_type_abbr = sorted(set([v[0] for v in grouping_scheme.values()]))
-    contact_matrix = np.zeros((len(residue_type_abbr), len(residue_type_abbr)), dtype=int)
+    contact_matrix = np.zeros((len(residue_type_abbr), len(residue_type_abbr)), dtype=float)
     abbr_to_index = {abbr: idx for idx, abbr in enumerate(residue_type_abbr)}
     for (ref_abbr, sel_abbr), count in contact_counts.items():
         i = abbr_to_index[ref_abbr]
@@ -271,7 +287,7 @@ def contact_statistic(args):
         df = pd.DataFrame(contact_matrix, 
                           index= [f"{reference_group_name}_{restype}" for restype in residue_type_abbr], 
                           columns=[f"{selection_group_name}_{restype}" for restype in residue_type_abbr])
-        df.to_excel(validate_extension(args.output,"xlsx"))
+        df.to_excel(validate_extension(args.output,"xlsx"), float_format="%.6f")
         print(f"## Contact statistic written to {validate_extension(args.output,"xlsx")}.")
     except Exception as e:
         raise RuntimeError(f"Failed to write output to {validate_extension(args.output,"xlsx")}: {e}")

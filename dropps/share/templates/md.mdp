@@ -46,10 +46,8 @@ filelog-grps = step,potentialEnergy,kineticEnergy      # Write these properties 
 # Neighbor searching
 nstlist     = 10       # Frequency to update the neighbor list
 
-#cutoff-scheme-lj    = static  # dynamic (lj-multi   * sigma) or static (cutoff-lj)
-#cutoff-scheme-coul  = static  # dynamic (coul-multi * sigma) or static (cutoff-coul)
-#cutoff-lj-multi = 3.0         # Appliable only when cutoff-scheme-lj = dynamic
-#cutoff-coul-multi = 3.0       # Appliable only when cutoff-scheme-coul = dynamic
+cutoff-scheme-lj    = static  # dynamic (lj-multi   * sigma) or static (cutoff-lj)
+cutoff-lj-multi = 3.0         # Appliable only when cutoff-scheme-lj = dynamic
 cutoff-lj   = 1.5      # Default cutoff value for LJ interaction,      only when cutoff-scheme-lj = static
 cutoff-coul = 1.5      # Default cutoff value for Coulomb interaction, only when cutoff-scheme-coul = static
 shift-lj    = True     # Shift LJ potential so U(cutoff-lj)=0
@@ -58,7 +56,7 @@ buffer      = 0.5      # Buffer for neighbor searching
 
 # Force calculations
 coulombtype = yukawa   # Method to calculate Coulomb interaction. Allowed values: yukawa,no
-vdwtype     = pLJ      # Method to calculate vdw interactions. Allowed values: pLJ,none pLJ is perturbed LJ
+vdwtype     = pLJ      # Method to calculate vdw interactions. Allowed values: pLJ,MPiPi,none. pLJ is perturbed LJ
 salt_conc   = 0.1      # Salt concentration in mol/L
 
 # Temperature coupling

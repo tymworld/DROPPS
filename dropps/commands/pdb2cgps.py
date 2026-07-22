@@ -1,4 +1,4 @@
-# seq2hoomd tool in cgps.ng package by Yiming Tang @ Fudan
+# seq2hoomd tool in dps package by Yiming Tang @ Fudan
 # Development started on June 6 2025
 
 from argparse import ArgumentParser
@@ -398,19 +398,29 @@ def pdb2cgps(args):
                 # Write atom type information
                 itp_file.write(f"[ atomtypes ]\n")
                 itp_file.write(f"; atom-abbr     atom-name \n")
-                for abbr in set(sequence_abbreviation):
+                all_wf_types = sorted(set(forcefield.abbr))
+                for abbr in all_wf_types:
                     itp_file.write(f"  {abbr:12s}  {forcefield.abbr2aa[abbr][:3]:7s}   \n")
                 itp_file.write("\n")
 
                 # Write sigma, lambda, epsilon information
                 itp_file.write(f"[ nonbond_params ]\n")
                 itp_file.write(f"; atom-abbr-1  atom-abbr-2   sigma   mu   epsilon\n")
-                for abbr_1, abbr_2 in itertools.combinations_with_replacement(set(sequence_abbreviation), 2):
-                        pair = f"{abbr_1}-{abbr_2}"
+                for abbr_1, abbr_2 in itertools.combinations_with_replacement(all_wf_types, 2):
+                    pair = f"{abbr_1}-{abbr_2}"
+                    pair_rev = f"{abbr_2}-{abbr_1}"
+                    if pair in forcefield.abbrs2sigma:
                         sigma = forcefield.abbrs2sigma[pair]
                         mu = forcefield.abbrs2mu[pair]
                         epsilon = forcefield.abbrs2epsilon[pair]
-                        itp_file.write(f"  {abbr_1:12s}  {abbr_2:12s}   {sigma:>6.3f}   {mu:.6f}   {epsilon:.6f}\n")
+                    elif pair_rev in forcefield.abbrs2sigma:
+                        sigma = forcefield.abbrs2sigma[pair_rev]
+                        mu = forcefield.abbrs2mu[pair_rev]
+                        epsilon = forcefield.abbrs2epsilon[pair_rev]
+                    else:
+                        print(f"ERROR: Missing Wang-Frenkel nonbonded parameter for pair {pair}.")
+                        quit()
+                    itp_file.write(f"  {abbr_1:12s}  {abbr_2:12s}   {sigma:>6.3f}   {mu:.6f}   {epsilon:.6f}\n")
                 itp_file.write("\n")
 
 
@@ -442,7 +452,7 @@ def pdb2cgps(args):
                 quit()
 
 
-prog = "seq2cgps"
+prog = "pdb2dps"
 desc = '''This program create pdb and top files for a given sequence.'''
 
 def getargs_pdb2cgps(argv):
@@ -479,4 +489,4 @@ def getargs_pdb2cgps(argv):
     return args
 
 from dropps.share.command_class import single_command
-pdb2cgps_commands = single_command("pdb2dps", getargs_pdb2cgps, pdb2cgps, desc)
+pdb2dps_commands = single_command("pdb2dps", getargs_pdb2cgps, pdb2cgps, desc)

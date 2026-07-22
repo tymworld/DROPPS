@@ -1,20 +1,20 @@
 [project]
 name = "dropps"
-version = "0.4.0"
+version = "0.4.1"
 description = "Distributed Rapid Operation Platform for Phase-separation Simulations"
 authors = [
     {name = "Yiming Tang",email = "ymtang@fudan.edu.cn"}
 ]
-license = {text = "Proprietary"}
-license-files = ["LICENSE"]
+license = "LicenseRef-Proprietary"
+license-files = ["LICENSE.md"]
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "numpy (==1.26.4)",
     "openmm (==8.1.*)",
-    "MDAnalysis (>=2.9.0)",
+    "MDAnalysis (>=2.7.0)",
     "tqdm (>=4.67)",
-    "bio (>=1.8.0)"
+    "bio (>=1.6.2)"
 ]
 
 [build-system]

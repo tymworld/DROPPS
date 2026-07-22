@@ -4,7 +4,7 @@ import dropps.analysis
 from dropps.share.command_class import all_commands_class
 
 commands_modelling = [dropps.commands.help.help_commands,
-                      dropps.commands.pdb2cgps.pdb2cgps_commands,
+                      dropps.commands.pdb2cgps.pdb2dps_commands,
                       dropps.commands.genelastic.genelastic_commands,
                       dropps.commands.genmesh.genmesh_commands,
                       dropps.commands.addangle.addangle_commands,
@@ -27,10 +27,13 @@ commands_analysis = [dropps.analysis.make_ndx.make_ndx_commands,
                      dropps.analysis.inter_distance.inter_distance_commands,
                      #dropps.analysis.contact_number.contact_number_commands,
                      dropps.analysis.contact.contact_commands,
+                     dropps.analysis.contact_ng.contact_ng_commands,
+                     dropps.analysis.timecorr.timecorr_commands,
                      dropps.analysis.contact_statistic.contact_statistic_commands,
                      dropps.analysis.msd.msd_commands,
                      dropps.analysis.assembly.assembly_commands,
-                     dropps.analysis.pdb2bond.pdb2bond_commands]
+                     dropps.analysis.pdb2bond.pdb2bond_commands,
+                     dropps.analysis.surface_tension.surface_tension_commands]
                      #dropps.analysis.sasa_mdtraj.sasa_commands]
 
 all_commands = all_commands_class(commands_modelling + commands_simulation + commands_analysis)

@@ -30,9 +30,9 @@ parameters_dict_template = {
     
     # Neighbor searching
     "nstlist"     : 10,
-    #"cutoff_scheme_lj": "static",
+    "cutoff_scheme_lj": "static",
     #"cutoff_scheme_coul": "static",
-    #"cutoff_lj_multi": 3.0,
+    "cutoff_lj_multi": 3.0,
     #"cutoff_coul_multi": 3.0,
     "cutoff_lj"   : 1.5,
     "cutoff_coul" : 1.5,
@@ -94,4 +94,3 @@ def getparameter(mdp_file):
 if __name__ == '__main__':
     print(getparameter("../templates/md.mdp"))
     
-

@@ -98,6 +98,28 @@ def combine_topologies(topology_list):
     mu_matrix      = build_matrix(mu_map, "mu")
     epsilon_matrix = build_matrix(epsilon_map, "epsilon")
 
+    missing_pairs = []
+    for i, a in enumerate(typelist_nb):
+        for j in range(i, n):
+            b = typelist_nb[j]
+            missing_terms = []
+            if np.isnan(sigma_matrix[i, j]):
+                missing_terms.append("sigma")
+            if np.isnan(mu_matrix[i, j]):
+                missing_terms.append("mu")
+            if np.isnan(epsilon_matrix[i, j]):
+                missing_terms.append("epsilon")
+            if len(missing_terms) > 0:
+                missing_pairs.append(f"{a}-{b} ({','.join(missing_terms)})")
+
+    if len(missing_pairs) > 0:
+        preview = ", ".join(missing_pairs[:20])
+        suffix = "" if len(missing_pairs) <= 20 else f" ... and {len(missing_pairs) - 20} more"
+        raise ValueError(
+            "Missing Wang-Frenkel nonbonded parameters across loaded topologies. "
+            f"Missing pairs: {preview}{suffix}"
+        )
+
     return typelist_nb, sigma_matrix, mu_matrix, epsilon_matrix
 
 
@@ -442,6 +464,14 @@ def build_system(pdb_file, top_file, parameters):
     # We add LJ and coulomb interaction
     print(f"## Nonbonded options: shift_lj = {parameters['shift_lj']}, shift_coul = {parameters['shift_coul']}.")
 
+    lj_cutoff_scheme = parameters.get("cutoff_scheme_lj", "static")
+    if lj_cutoff_scheme not in ["static", "dynamic"]:
+        print(f"ERROR: Unknown cutoff_scheme_lj '{lj_cutoff_scheme}'. Allowed values: static, dynamic.")
+        quit()
+    if lj_cutoff_scheme == "dynamic" and parameters["cutoff_lj_multi"] <= 0:
+        print(f"ERROR: cutoff_lj_multi must be > 0 when cutoff_scheme_lj is dynamic.")
+        quit()
+
     if parameters["vdwtype"] == "pLJ":
 
         if forcefield_function_type_LJ != "Ashbaugh-Hatch":
@@ -455,24 +485,48 @@ def build_system(pdb_file, top_file, parameters):
         epsilon_lj = epsilon_list[0]
 
         if parameters["shift_lj"]:
-            lj_force = openmm.CustomNonbondedForce("""
-            step(cutoff - r)*(ah - ah_cut);
-            ah = step(rc_min - r)*(lj + (1 - lambda)*epsilon) + step(r - rc_min)*(lambda*lj);
-            ah_cut = step(rc_min - cutoff)*(lj_cut + (1 - lambda)*epsilon) + step(cutoff - rc_min)*(lambda*lj_cut);
-            lj = 4*epsilon*((sigma/r)^12 - (sigma/r)^6);
-            lj_cut = 4*epsilon*((sigma/cutoff)^12 - (sigma/cutoff)^6);
-            rc_min = 2^(1/6)*sigma;
-            sigma = 0.5*(sigma1 + sigma2);
-            lambda = 0.5*(lambda1 + lambda2);
-            """)
+            if lj_cutoff_scheme == "dynamic":
+                lj_force = openmm.CustomNonbondedForce("""
+                step(cutoff - r)*(ah - ah_cut);
+                ah = step(rc_min - r)*(lj + (1 - lambda)*epsilon) + step(r - rc_min)*(lambda*lj);
+                ah_cut = step(rc_min - cutoff)*(lj_cut + (1 - lambda)*epsilon) + step(cutoff - rc_min)*(lambda*lj_cut);
+                lj = 4*epsilon*((sigma/r)^12 - (sigma/r)^6);
+                lj_cut = 4*epsilon*((sigma/cutoff)^12 - (sigma/cutoff)^6);
+                rc_min = 2^(1/6)*sigma;
+                cutoff = cutoff_lj_multi * sigma;
+                sigma = 0.5*(sigma1 + sigma2);
+                lambda = 0.5*(lambda1 + lambda2);
+                """)
+            else:
+                lj_force = openmm.CustomNonbondedForce("""
+                step(cutoff - r)*(ah - ah_cut);
+                ah = step(rc_min - r)*(lj + (1 - lambda)*epsilon) + step(r - rc_min)*(lambda*lj);
+                ah_cut = step(rc_min - cutoff)*(lj_cut + (1 - lambda)*epsilon) + step(cutoff - rc_min)*(lambda*lj_cut);
+                lj = 4*epsilon*((sigma/r)^12 - (sigma/r)^6);
+                lj_cut = 4*epsilon*((sigma/cutoff)^12 - (sigma/cutoff)^6);
+                rc_min = 2^(1/6)*sigma;
+                sigma = 0.5*(sigma1 + sigma2);
+                lambda = 0.5*(lambda1 + lambda2);
+                """)
         else:
-            lj_force = openmm.CustomNonbondedForce("""
-            step(rc_min - r)*(lj + (1 - lambda)*epsilon) + step(r - rc_min)*(lambda*lj);
-            lj = 4*epsilon*((sigma/r)^12 - (sigma/r)^6);
-            rc_min = 2^(1/6)*sigma;
-            sigma = 0.5*(sigma1 + sigma2);
-            lambda = 0.5*(lambda1 + lambda2);
-            """)
+            if lj_cutoff_scheme == "dynamic":
+                lj_force = openmm.CustomNonbondedForce("""
+                step(cutoff - r)*ah;
+                ah = step(rc_min - r)*(lj + (1 - lambda)*epsilon) + step(r - rc_min)*(lambda*lj);
+                lj = 4*epsilon*((sigma/r)^12 - (sigma/r)^6);
+                rc_min = 2^(1/6)*sigma;
+                cutoff = cutoff_lj_multi * sigma;
+                sigma = 0.5*(sigma1 + sigma2);
+                lambda = 0.5*(lambda1 + lambda2);
+                """)
+            else:
+                lj_force = openmm.CustomNonbondedForce("""
+                step(rc_min - r)*(lj + (1 - lambda)*epsilon) + step(r - rc_min)*(lambda*lj);
+                lj = 4*epsilon*((sigma/r)^12 - (sigma/r)^6);
+                rc_min = 2^(1/6)*sigma;
+                sigma = 0.5*(sigma1 + sigma2);
+                lambda = 0.5*(lambda1 + lambda2);
+                """)
 
         print(f"## LJ: LJ interaction will be calculated using the following equation:")
         print(f"## {lj_force.getEnergyFunction()}")
@@ -480,7 +534,9 @@ def build_system(pdb_file, top_file, parameters):
         lj_force.addPerParticleParameter("sigma")
         lj_force.addPerParticleParameter("lambda")
         lj_force.addGlobalParameter("epsilon", defaultValue=epsilon_lj * kilojoule_per_mole)
-        if parameters["shift_lj"]:
+        if lj_cutoff_scheme == "dynamic":
+            lj_force.addGlobalParameter("cutoff_lj_multi", defaultValue=parameters["cutoff_lj_multi"])
+        elif parameters["shift_lj"]:
             lj_force.addGlobalParameter("cutoff", defaultValue=parameters["cutoff_lj"] * nanometer)
 
         for i in range(lj_force.getNumGlobalParameters()):
@@ -496,10 +552,19 @@ def build_system(pdb_file, top_file, parameters):
         
         print(f"## LJ: LJ interaction contains {lj_force.getNumExclusions()} exclusion pairs.")
             
-        lj_force.setCutoffDistance(parameters["cutoff_lj"] * nanometer)
+        if lj_cutoff_scheme == "dynamic":
+            particle_sigmas = [atomtypes_dict[atom.abbr].sigma for top in topology_list for atom in top.atoms]
+            max_sigma = max(particle_sigmas)
+            lj_neighbor_cutoff = parameters["cutoff_lj_multi"] * max_sigma
+            lj_force.setCutoffDistance(lj_neighbor_cutoff * nanometer)
+        else:
+            lj_force.setCutoffDistance(parameters["cutoff_lj"] * nanometer)
         lj_force.setNonbondedMethod(openmm.CustomNonbondedForce.CutoffPeriodic)
 
-        print(f"## LJ: Cutoff for LJ interaction set to static value of {lj_force.getCutoffDistance()}.")
+        if lj_cutoff_scheme == "dynamic":
+            print(f"## LJ: Dynamic cutoff enabled. Pair cutoff is sigma*{parameters['cutoff_lj_multi']}. Neighbor-list cutoff set to {lj_force.getCutoffDistance()}.")
+        else:
+            print(f"## LJ: Cutoff for LJ interaction set to static value of {lj_force.getCutoffDistance()}.")
 
         temperature = parameters["production_temperature"]
 
@@ -525,35 +590,70 @@ def build_system(pdb_file, top_file, parameters):
             quit()
         
         if parameters["shift_lj"]:
-            lj_force = openmm.CustomNonbondedForce("""
-            step(cutoff - r) * (wf - wf_cut);
-            wf = epsilon * alpha * part1 * part2 ^ (2 * nu);
-            wf_cut = epsilon * alpha * part1_cut * part2_cut ^ (2 * nu);
-            part1 = (sigma / r) ^ (2 * mu) - 1;
-            part2 = (R / r) * (2 * mu) - 1;
-            part1_cut = (sigma / cutoff) ^ (2 * mu) - 1;
-            part2_cut = (R / cutoff) * (2 * mu) - 1;
-            alpha = 2 * nu * (R / sigma) ^ (2 * mu) * (upper / lower) ^ (2 * nu + 1);
-            upper = 2 * nu + 1;
-            lower = 2 * nu * ((R / sigma) ^ (2 * mu) - 1);
-            R = RScale * sigma;
-            epsilon = eps_unit * epsilon_Table(type1,type2); 
-            sigma = sigma_unit * sigma_Table(type1,type2);
-            mu = mu_unit * mu_Table(type1,type2)                         
-            """)
+            if lj_cutoff_scheme == "dynamic":
+                lj_force = openmm.CustomNonbondedForce("""
+                step(cutoff - r) * (wf - wf_cut);
+                wf = epsilon * alpha * part1 * part2 ^ (2 * nu);
+                wf_cut = epsilon * alpha * part1_cut * part2_cut ^ (2 * nu);
+                part1 = (sigma / r) ^ (2 * mu) - 1;
+                part2 = (R / r) ^ (2 * mu) - 1;
+                part1_cut = (sigma / cutoff) ^ (2 * mu) - 1;
+                part2_cut = (R / cutoff) ^ (2 * mu) - 1;
+                alpha = 2 * nu * (R / sigma) ^ (2 * mu) * (upper / lower) ^ (2 * nu + 1);
+                upper = 2 * nu + 1;
+                lower = 2 * nu * ((R / sigma) ^ (2 * mu) - 1);
+                R = RScale * sigma;
+                cutoff = cutoff_lj_multi * sigma;
+                epsilon = eps_unit * epsilon_Table(type1,type2); 
+                sigma = sigma_unit * sigma_Table(type1,type2);
+                mu = mu_unit * mu_Table(type1,type2)                         
+                """)
+            else:
+                lj_force = openmm.CustomNonbondedForce("""
+                step(cutoff - r) * (wf - wf_cut);
+                wf = epsilon * alpha * part1 * part2 ^ (2 * nu);
+                wf_cut = epsilon * alpha * part1_cut * part2_cut ^ (2 * nu);
+                part1 = (sigma / r) ^ (2 * mu) - 1;
+                part2 = (R / r) ^ (2 * mu) - 1;
+                part1_cut = (sigma / cutoff) ^ (2 * mu) - 1;
+                part2_cut = (R / cutoff) ^ (2 * mu) - 1;
+                alpha = 2 * nu * (R / sigma) ^ (2 * mu) * (upper / lower) ^ (2 * nu + 1);
+                upper = 2 * nu + 1;
+                lower = 2 * nu * ((R / sigma) ^ (2 * mu) - 1);
+                R = RScale * sigma;
+                epsilon = eps_unit * epsilon_Table(type1,type2); 
+                sigma = sigma_unit * sigma_Table(type1,type2);
+                mu = mu_unit * mu_Table(type1,type2)                         
+                """)
         else:
-            lj_force = openmm.CustomNonbondedForce("""
-            epsilon * alpha * part1 * part2 ^ (2 * nu);
-            part1 = (sigma / r) ^ (2 * mu) - 1;
-            part2 = (R / r) * (2 * mu) - 1;
-            alpha = 2 * nu * (R / sigma) ^ (2 * mu) * (upper / lower) ^ (2 * nu + 1);
-            upper = 2 * nu + 1;
-            lower = 2 * nu * ((R / sigma) ^ (2 * mu) - 1);
-            R = RScale * sigma;
-            epsilon=eps_unit * epsilon_Table(type1,type2); 
-            sigma=sigma_unit * sigma_Table(type1,type2);
-            mu=mu_unit * mu_Table(type1,type2)                         
-            """)
+            if lj_cutoff_scheme == "dynamic":
+                lj_force = openmm.CustomNonbondedForce("""
+                step(cutoff - r) * wf;
+                wf = epsilon * alpha * part1 * part2 ^ (2 * nu);
+                part1 = (sigma / r) ^ (2 * mu) - 1;
+                part2 = (R / r) ^ (2 * mu) - 1;
+                alpha = 2 * nu * (R / sigma) ^ (2 * mu) * (upper / lower) ^ (2 * nu + 1);
+                upper = 2 * nu + 1;
+                lower = 2 * nu * ((R / sigma) ^ (2 * mu) - 1);
+                R = RScale * sigma;
+                cutoff = cutoff_lj_multi * sigma;
+                epsilon=eps_unit * epsilon_Table(type1,type2); 
+                sigma=sigma_unit * sigma_Table(type1,type2);
+                mu=mu_unit * mu_Table(type1,type2)                         
+                """)
+            else:
+                lj_force = openmm.CustomNonbondedForce("""
+                epsilon * alpha * part1 * part2 ^ (2 * nu);
+                part1 = (sigma / r) ^ (2 * mu) - 1;
+                part2 = (R / r) ^ (2 * mu) - 1;
+                alpha = 2 * nu * (R / sigma) ^ (2 * mu) * (upper / lower) ^ (2 * nu + 1);
+                upper = 2 * nu + 1;
+                lower = 2 * nu * ((R / sigma) ^ (2 * mu) - 1);
+                R = RScale * sigma;
+                epsilon=eps_unit * epsilon_Table(type1,type2); 
+                sigma=sigma_unit * sigma_Table(type1,type2);
+                mu=mu_unit * mu_Table(type1,type2)                         
+                """)
 
         print(f"## LJ: LJ interaction will be calculated using the following equation:")
         print(f"## {lj_force.getEnergyFunction()}")
@@ -564,7 +664,9 @@ def build_system(pdb_file, top_file, parameters):
 
         lj_force.addGlobalParameter("RScale", defaultValue=3)
         lj_force.addGlobalParameter("nu", defaultValue=1)
-        if parameters["shift_lj"]:
+        if lj_cutoff_scheme == "dynamic":
+            lj_force.addGlobalParameter("cutoff_lj_multi", defaultValue=parameters["cutoff_lj_multi"])
+        elif parameters["shift_lj"]:
             lj_force.addGlobalParameter("cutoff", defaultValue=parameters["cutoff_lj"] * nanometer)
 
         #lj_force.addPerParticleParameter("epsilon")
@@ -586,12 +688,27 @@ def build_system(pdb_file, top_file, parameters):
         
         print(f"## LJ: LJ interaction contains {lj_force.getNumExclusions()} exclusion pairs.")
             
-        lj_force.setCutoffDistance(parameters["cutoff_lj"] * nanometer)
+        try:
+            typelist_nb, sigma_matrix, mu_matrix, epsilon_matrix = combine_topologies(topology_list)
+        except ValueError as exc:
+            print(f"ERROR: {exc}")
+            quit()
+        if lj_cutoff_scheme == "dynamic":
+            max_sigma = float(np.nanmax(sigma_matrix))
+            if not np.isfinite(max_sigma) or max_sigma <= 0:
+                print(f"ERROR: Invalid max sigma value ({max_sigma}) for dynamic LJ cutoff.")
+                quit()
+            lj_neighbor_cutoff = parameters["cutoff_lj_multi"] * max_sigma
+            lj_force.setCutoffDistance(lj_neighbor_cutoff * nanometer)
+        else:
+            lj_force.setCutoffDistance(parameters["cutoff_lj"] * nanometer)
         lj_force.setNonbondedMethod(openmm.CustomNonbondedForce.CutoffPeriodic)
 
-        print(f"## LJ: Cutoff for LJ interaction set to static value of {lj_force.getCutoffDistance()}.")
+        if lj_cutoff_scheme == "dynamic":
+            print(f"## LJ: Dynamic cutoff enabled. Pair cutoff is sigma*{parameters['cutoff_lj_multi']}. Neighbor-list cutoff set to {lj_force.getCutoffDistance()}.")
+        else:
+            print(f"## LJ: Cutoff for LJ interaction set to static value of {lj_force.getCutoffDistance()}.")
 
-        typelist_nb, sigma_matrix, mu_matrix, epsilon_matrix = combine_topologies(topology_list)
         ntypes = len(typelist_nb)
         print(f"## Will add tabulated function for LJ interaction with {ntypes} types.")
         print(f"## Type list: {','.join(typelist_nb)}")
