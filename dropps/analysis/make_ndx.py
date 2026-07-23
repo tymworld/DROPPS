@@ -1,23 +1,23 @@
 # make_ndx tool in DROPPS package by Yiming Tang @ Fudan
 # Development started on July 15 2025
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 from dropps.share.indexing import indexGroups
 from dropps.fileio.tpr_reader import read_tpr
 
 prog = "make_ndx"
-desc = '''This program generate an index file for data analysis.'''
+desc = "Create or extend an atom-group index file interactively."
 
 def getargs_make_ndx(argv):
 
     parser = ArgumentParser(prog=prog, description=desc)
 
     parser.add_argument('-s', '--run-input', type=str, required=True, 
-                        help="TPR file containing all information for a simulation run.")
+                        help="Input DROPPS run file (.tpr) containing the system topology.")
     parser.add_argument('-n', '--index', type=str, required=False,
-                        help="Load existing index file from this file.")
+                        help="Optional existing index file (.ndx) to extend.")
     parser.add_argument('-o', '--output', type=str, required=True,
-                        help="Path to output ndx files.")
+                        help="Output index file (.ndx).")
 
     args = parser.parse_args(argv)
     return args

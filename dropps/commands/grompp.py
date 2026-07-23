@@ -11,7 +11,7 @@ from openmm.unit import nanometer, kilojoule_per_mole, moles, liter, picosecond,
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 from dropps.share.forcefield import forcefield_list
 from dropps.share.parameters import getparameter
 
@@ -47,20 +47,20 @@ def grompp(args):
     print(f"## Write run time files to {output_tpr}.")
 
 prog = "grompp"
-desc = '''This program initates and runs an molecular dynamics simulation.'''
+desc = "Build a DROPPS run-input file from structure, topology, and simulation parameters."
 
 def getargs_grompp(argv):
 
     parser = ArgumentParser(prog=prog, description=desc)
 
     parser.add_argument('-f', '--structure', type=str, required=True, 
-                        help="PDB file containing the initial configuration of the system.")
+                        help="Input structure file (.pdb) containing the initial coordinates and box.")
     parser.add_argument('-p', '--topology', type=str, required=True, 
-                        help="TOP file containing topology and included ITP files.")
+                        help="Input system topology file (.top) referencing the required ITP files.")
     parser.add_argument('-m', '--parameter', type=str, required=True,
-                        help="Parameter file (mdp) for this simulation.")
+                        help="Input molecular-dynamics parameter file (.mdp).")
     parser.add_argument('-o', '--output', type=str, required=True,
-                        help="Path to output tpr files.")
+                        help="Output DROPPS run-input file (.tpr); the extension is added if omitted.")
 
     args = parser.parse_args(argv)
     return args

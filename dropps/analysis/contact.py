@@ -1,12 +1,13 @@
 # contact map (next generation, using neighborhood searching) in DROPPS package by Yiming Tang @ Fudan
 # Development started on Jan 29 2026
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 import numpy as np
 from tqdm import tqdm
 from dropps.fileio.filename_control import validate_extension
 from dropps.fileio.xpm_reader import write_xpm
 from dropps.fileio.xvg_reader import write_xvg
+from dropps.analysis.contact_cli import add_contact_arguments
 
 from MDAnalysis.transformations import wrap
 
@@ -19,7 +20,7 @@ from Bio import BiopythonDeprecationWarning
 warnings.filterwarnings("ignore", category=BiopythonDeprecationWarning)
 
 prog = "contact"
-desc = '''This program calculate contact map in a residue-level resolution.'''
+desc = "Calculate residue-level contact maps and contact-number time series."
 
 def remove_near_diagonal(mat, cutoff):
     mat = mat.copy()   # avoid modifying original
@@ -223,89 +224,12 @@ def compute_residue_contact_maps_fixed(
 
 
 def getargs_contact(argv):
-
-    parser = ArgumentParser(prog=prog, description=desc)
-
-    parser.add_argument('-s', '--run-input', type=str, required=True, 
-                        help="TPR file containing all information for a simulation run.")
-    
-    parser.add_argument('-f', '--input', type=str, required=True, 
-                    help="XTC file which is taken as input trajectory.")
-    
-    parser.add_argument('-n', '--index', type=str, required=False,
-                        help="Index file containing non-default groups.")
-    
-    parser.add_argument('-ref', '--reference-group', type=str,
-                        help="Reference group of atoms (x axis of the contact map).")
-    
-    parser.add_argument('-sel', '--selection-group', type=str,
-                        help="Selection group of atoms (y axis of the contact map).")
-    
-    parser.add_argument('-cs', '--cutoff-scheme', type=str, choices=["global", "residue"], required=True,
-                        help="Scheme for determining inter-residue contacts.")
-    
-    parser.add_argument('-c', '--cutoff', type=float, default=0.7,
-                        help="Cutoff distance for contact calculation, unit is nanometer.")
-    
-    parser.add_argument('-cm', '--cutoff-multiplier', type=float, default=1.2,
-                        help="Factor which is multiplied to sigma value for residue-wise contact cutoff.")
-    
-    parser.add_argument('-rd', '--remove-diagonal', type=int, default=2,
-                        help="Number of diagonals (i - j <= abs(rd)) to remove in contact map.")
-        
-    parser.add_argument('-b', '--start-time', type=int,
-                        help="Time (ns) of the first frame to calculate.")
-
-    parser.add_argument('-e', '--end-time', type=int,
-                        help="Time (ns) of the last frame to calculate.")
-
-    parser.add_argument('-dt', '--delta-time', type=int,
-                        help="Intervals (ns) between two calculated frames.")
-    
-    parser.add_argument('-pbc', '--treat-pbc', action='store_true', default=False,
-                        help="Treat broken molecule at periodic boundaries.")
-    
-    # output map files
-          
-    parser.add_argument('-ors', '--output-inter-reference-selection', type=str,
-                        help="DAT file to write inter-chain contact map between reference and selection groups.")
-    
-    parser.add_argument('-orr', '--output-inter-reference-reference', type=str,
-                        help="DAT file to write inter-chain contact map between reference groups.")
-    
-    parser.add_argument('-oss', '--output-inter-selection-selection', type=str,
-                        help="DAT file to write inter-chain contact map between selection groups.")
-            
-    parser.add_argument('-or', '--output-intra-reference', type=str,
-                        help="DAT file to write intra-chain contact map between reference groups.")
-    
-    parser.add_argument('-os', '--output-intra-selection', type=str,
-                        help="DAT file to write intra-chain contact map between selection groups.")
-    
-    # output time evolution files
-
-    parser.add_argument('-otrs', '--output-time-inter-reference-selection', type=str,
-                        help="XVG file to write time evolution of inter-chain contact numbers between reference and selection groups.")
-    
-    parser.add_argument('-otrr', '--output-time-inter-reference-reference', type=str,
-                        help="XVG file to write time evolution of inter-chain contact numbers between reference groups.")
-    
-    parser.add_argument('-otss', '--output-time-inter-selection-selection', type=str,
-                        help="XVG file to write time evolution of inter-chain contact numbers between selection groups.")
-    
-    parser.add_argument('-otr', '--output-time-intra-reference', type=str,
-                        help="XVG file to write time evolution of intra-chain contact numbers between reference groups.")
-    
-    parser.add_argument('-ots', '--output-time-intra-selection', type=str,
-                        help="XVG file to write time evolution of intra-chain contact numbers between selection groups.")
-    
-    # output schemes
-
-    parser.add_argument('-intraavg', '--intra-average', action='store_true', default=False,
-                        help="Output average intra-chain contact map instead of summing-up maps.")
-        
-    parser.add_argument('-otype', '--output-type', type=str, choices=["dat", "xpm", "xlsx"], default="dat",
-                        help="Type of output files. Possible choice from dat, xpm, and xlsx")
+    parser = ArgumentParser(
+        prog=prog,
+        description=desc,
+        epilog="At least one contact-map or contact-number output option is required.",
+    )
+    add_contact_arguments(parser)
     
     args = parser.parse_args(argv)
     return args

@@ -1,7 +1,7 @@
 # density tool in DROPPS package by Yiming Tang @ Fudan
 # Development started on July 17 2025
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 from dropps.share.trajectory import trajectory_class
 
 from openmm.unit import nanosecond, picosecond
@@ -14,7 +14,7 @@ from math import floor
 from dropps.fileio.xvg_reader import write_xvg
 
 prog = "density"
-desc = '''This program calculate the density profile of a simulation box along one axis.'''
+desc = "Calculate a one-dimensional mass- or charge-density profile."
 
 
 def shift_density_center(density_profiles, dense_phase_threshold, density_profile_for_center):
@@ -72,43 +72,43 @@ def getargs_density(argv):
     parser = ArgumentParser(prog=prog, description=desc)
 
     parser.add_argument('-s', '--run-input', type=str, required=True, 
-                        help="TPR file containing all information for a simulation run.")
+                        help="Input DROPPS run file (.tpr) containing the system and simulation settings.")
     
     parser.add_argument('-f', '--input', type=str, required=True, 
-                    help="XTC file which is taken as input trajectory.")
+                    help="Input trajectory file (.xtc).")
     
     parser.add_argument('-n', '--index', type=str, required=False,
-                        help="Index file containing non-default groups.")
+                        help="Optional index file (.ndx) defining additional atom groups.")
 
     parser.add_argument('-o', '--output', type=str, required=True, 
-                        help="XVG file to write density profile.")
+                        help="Output density-profile file (.xvg); the extension is added if omitted.")
 
     parser.add_argument('-x', '--axis', type=str, choices=['x', 'y', 'z'], default='z',
-                        help="Axis along which the density profile will be calculated. Default: z")
+                        help="Axis along which to calculate the density profile.")
     
     parser.add_argument('-tp', '--type', type=str, choices=["mass", "charge"], default="mass",
-                        help="Calculate mass density or charge density.")
+                        help="Density quantity to calculate.")
 
     parser.add_argument('-b', '--start-time', type=int,
-                        help="Time (ns) of the first frame to calculate.")
+                        help="First trajectory time to analyze, in ns.")
 
     parser.add_argument('-e', '--end-time', type=int,
-                        help="Time (ns) of the last frame to calculate.")
+                        help="Last trajectory time to analyze, in ns.")
 
     parser.add_argument('-dt', '--delta-time', type=int, default=1,
-                        help="Intervals (ns) between two attempts recentering density profiles.")
+                        help="Interval between analyzed and recentered density profiles, in ns.")
     
     parser.add_argument('-selfit', '--selection-fit', type=int,
-                        help="Group of atoms on which the dense phase is determined.")
+                        help="Index group used to locate the dense phase; if omitted, prompt interactively.")
     
     parser.add_argument('-sel', '--selection-calculate', type=int, nargs='+',
-                        help="Group of atoms on which the density profile will be printed")
+                        help="Index groups whose density profiles are written; if omitted, prompt interactively.")
 
     parser.add_argument('-nc', '--no-center', default=False, action='store_true',
-                        help="Do not center density profile for each time window. Default is center.")
+                        help="Disable per-window centering of the density profile.")
 
     parser.add_argument('-t', '--dense-phase-threshold', default=0.5, type=float,
-                        help="Threshold for dense phase which is a multiplier of the highest density.")
+                        help="Dense-phase threshold as a fraction of the maximum density.")
 
     args = parser.parse_args(argv)
     return args

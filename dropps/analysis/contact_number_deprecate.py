@@ -1,7 +1,7 @@
 # Contact number calculation tool in DROPPS package by Yiming Tang @ Fudan
 # Development started on July 21 2025
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 from dropps.share.trajectory import trajectory_class
 from dropps.fileio.filename_control import validate_extension
 from dropps.fileio.xvg_reader import write_xvg
@@ -231,6 +231,5 @@ def contact_number(args):
 
 from dropps.share.command_class import single_command
 contact_number_commands = single_command("contact", getargs_contact_number, contact_number, desc)
-
 
 

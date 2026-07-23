@@ -31,6 +31,7 @@ SECTION_MAP = {
 class ArgInfo:
     options: list[str]
     required: bool
+    exclusive_group: str | None = None
 
 
 @dataclass
@@ -87,8 +88,39 @@ def _get_str_constant(node: ast.AST) -> str | None:
     return None
 
 
-def _extract_parser_required_args(func_def: ast.FunctionDef) -> list[ArgInfo]:
+def _extract_parser_required_args(
+    func_def: ast.FunctionDef,
+    module_tree: ast.Module,
+    module_file: Path,
+    seen: set[tuple[Path, str]] | None = None,
+) -> list[ArgInfo]:
+    if seen is None:
+        seen = set()
+    key = (module_file.resolve(), func_def.name)
+    if key in seen:
+        return []
+    seen.add(key)
+
     required_args: list[ArgInfo] = []
+    required_exclusive_groups: set[str] = set()
+
+    for node in ast.walk(func_def):
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
+            continue
+        if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+            continue
+        call = node.value
+        if not isinstance(call.func, ast.Attribute):
+            continue
+        if call.func.attr != "add_mutually_exclusive_group":
+            continue
+        if any(
+            kw.arg == "required"
+            and isinstance(kw.value, ast.Constant)
+            and kw.value.value is True
+            for kw in call.keywords
+        ):
+            required_exclusive_groups.add(node.targets[0].id)
 
     for node in ast.walk(func_def):
         if not isinstance(node, ast.Call):
@@ -108,13 +140,59 @@ def _extract_parser_required_args(func_def: ast.FunctionDef) -> list[ArgInfo]:
             continue
 
         required = False
+        exclusive_group = None
         for kw in node.keywords:
             if kw.arg == "required" and isinstance(kw.value, ast.Constant) and kw.value.value is True:
                 required = True
                 break
 
+        if (
+            isinstance(node.func.value, ast.Name)
+            and node.func.value.id in required_exclusive_groups
+        ):
+            required = True
+            exclusive_group = node.func.value.id
+
         if required:
-            required_args.append(ArgInfo(options=options, required=True))
+            required_args.append(
+                ArgInfo(
+                    options=options,
+                    required=True,
+                    exclusive_group=exclusive_group,
+                )
+            )
+
+    imported_functions: dict[str, Path] = {}
+    for node in module_tree.body:
+        if not isinstance(node, ast.ImportFrom) or not node.module:
+            continue
+        if not node.module.startswith("dropps."):
+            continue
+        imported_module = REPO_ROOT.joinpath(*node.module.split(".")).with_suffix(".py")
+        for alias in node.names:
+            imported_functions[alias.asname or alias.name] = imported_module
+
+    for node in ast.walk(func_def):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+            continue
+        helper_file = imported_functions.get(node.func.id)
+        if helper_file is None or not helper_file.exists():
+            continue
+        helper_tree = ast.parse(
+            helper_file.read_text(encoding="utf-8"),
+            filename=str(helper_file),
+        )
+        for helper_node in helper_tree.body:
+            if isinstance(helper_node, ast.FunctionDef) and helper_node.name == node.func.id:
+                required_args.extend(
+                    _extract_parser_required_args(
+                        helper_node,
+                        helper_tree,
+                        helper_file,
+                        seen,
+                    )
+                )
+                break
 
     return required_args
 
@@ -163,7 +241,11 @@ def _parse_module_info(module_file: Path) -> CommandInfo:
     if getargs_name:
         for node in tree.body:
             if isinstance(node, ast.FunctionDef) and node.name == getargs_name:
-                required_args = _extract_parser_required_args(node)
+                required_args = _extract_parser_required_args(
+                    node,
+                    tree,
+                    module_file,
+                )
                 break
 
     if not command_name:
@@ -175,10 +257,23 @@ def _parse_module_info(module_file: Path) -> CommandInfo:
 def _format_required_args(required_args: list[ArgInfo]) -> str:
     if len(required_args) == 0:
         return "None"
-    labels = []
+
+    labels: list[str] = []
+    emitted_groups: set[str] = set()
     for item in required_args:
-        labels.append("/".join(item.options))
-    return ", ".join(f"`{label}`" for label in labels)
+        if item.exclusive_group is None:
+            labels.append(f"`{'/'.join(item.options)}`")
+            continue
+        if item.exclusive_group in emitted_groups:
+            continue
+        emitted_groups.add(item.exclusive_group)
+        alternatives = [
+            f"`{'/'.join(grouped.options)}`"
+            for grouped in required_args
+            if grouped.exclusive_group == item.exclusive_group
+        ]
+        labels.append("one of " + " or ".join(alternatives))
+    return ", ".join(labels)
 
 
 def _render_commands_section(section_modules: dict[str, list[Path]]) -> str:

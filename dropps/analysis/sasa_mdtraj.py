@@ -1,7 +1,7 @@
 # SASA tool in DROPPS package by Yiming Tang @ Fudan
 # Development started on Feb 3 2026
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 from dropps.share.trajectory import trajectory_class
 import mdtraj
 from dropps.fileio.pdb_reader import write_pdbData

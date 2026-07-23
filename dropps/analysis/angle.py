@@ -1,7 +1,7 @@
 # angle calculation tool in DROPPS package by Yiming Tang @ Fudan
 # Development started on July 20 2025
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 from dropps.share.trajectory import trajectory_class
 from dropps.fileio.filename_control import validate_extension
 from dropps.fileio.xvg_reader import write_xvg
@@ -16,47 +16,47 @@ warnings.filterwarnings("ignore", category=BiopythonDeprecationWarning)
 
 from MDAnalysis.transformations import unwrap
 prog = "angle"
-desc = '''This program calculate the profile of angles along amino acid sequence of a protein.'''
+desc = "Calculate backbone-angle profiles and time series for equivalent protein chains."
 
 def getargs_angle(argv):
 
     parser = ArgumentParser(prog=prog, description=desc)
 
     parser.add_argument('-s', '--run-input', type=str, required=True, 
-                        help="TPR file containing all information for a simulation run.")
+                        help="Input DROPPS run file (.tpr) containing the system and simulation settings.")
     
     parser.add_argument('-f', '--input', type=str, required=True, 
-                    help="XTC file which is taken as input trajectory.")
+                    help="Input trajectory file (.xtc).")
     
     parser.add_argument('-n', '--index', type=str, required=False,
-                        help="Index file containing non-default groups.")
+                        help="Optional index file (.ndx) defining additional atom groups.")
     
     parser.add_argument('-sel', '--selection', type=int,
-                        help="Reference group containing vertex atoms. Chains will be spliited and terminals will be ignored.")
+                        help="Index group containing angle-center beads; chains are split and terminal beads are ignored. If omitted, prompt interactively.")
     
     parser.add_argument('-b', '--start-time', type=int,
-                        help="Time (ns) of the first frame to calculate.")
+                        help="First trajectory time to analyze, in ns.")
 
     parser.add_argument('-e', '--end-time', type=int,
-                        help="Time (ns) of the last frame to calculate.")
+                        help="Last trajectory time to analyze, in ns.")
 
     parser.add_argument('-dt', '--delta-time', type=int,
-                        help="Intervals (ns) between two calculated frames.")
+                        help="Approximate interval between analyzed frames, in ns.")
     
     parser.add_argument('-pbc', '--treat-pbc', action='store_true', default=False,
-                        help="Treat broken molecule at periodic boundaries.")
+                        help="Unwrap molecules across periodic boundaries before analysis.")
 
     parser.add_argument('-ot', '--output-time', type=str,
-                        help="Output of all angles (chain averaged) as a function of time.")
+                        help="Output chain-averaged angle time series (.xvg); the extension is added if omitted.")
     
     parser.add_argument('-or', '--output-residue', type=str,
-                        help="Output of all angles (time averaged) as a function of residue index.")
+                        help="Output time-averaged angle profile by residue (.xvg); the extension is added if omitted.")
     
     parser.add_argument('-ors', '--output-residue-statistic', type=str,
-                        help="Statistic of all angles as a function of residue index (mean and std).")
+                        help="Output residue-wise angle mean and standard deviation (.xvg); the extension is added if omitted.")
     
     parser.add_argument('-ov', '--output-verbose', type=str,
-                        help="Verbose output of all angles.")
+                        help="Output per-chain, per-residue angle time series (.xvg); the extension is added if omitted.")
     
     args = parser.parse_args(argv)
     return args
@@ -199,7 +199,5 @@ def angle(args):
 
 from dropps.share.command_class import single_command
 angle_commands = single_command("angle", getargs_angle, angle, desc)
-
-
 
 

@@ -22,15 +22,16 @@ def help(args):
 
     if "commands" in args:
     
-        print(f"## Usage: dps command options")
-        print(f"## Existing commands:")
-        print(f"## Commands for system modelling:")
+        print("## Usage: dps COMMAND [OPTIONS]")
+        print('## Run "dps COMMAND -h" for detailed command help.')
+        print("## Available commands:")
+        print("## System modeling:")
         for command in commands_modelling:
             print(f"## {command.name:15s}: {command.desc}")
-        print(f"## Commands for simulation:")
+        print("## Simulation:")
         for command in commands_simulation:
             print(f"## {command.name:15s}: {command.desc}")
-        print(f"## Commands for simulation analysis:")
+        print("## Analysis:")
         for command in commands_analysis:
             print(f"## {command.name:15s}: {command.desc}")
     
@@ -44,4 +45,9 @@ def help(args):
             help_command(["-h"])
 
 from dropps.share.command_class import single_command
-help_commands = single_command("help", getargs_help, help, "help")
+help_commands = single_command(
+    "help",
+    getargs_help,
+    help,
+    "Show the command list or detailed help for one or more commands.",
+)

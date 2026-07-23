@@ -1,7 +1,7 @@
 # editconf tool in CGPS.ng package by Yiming Tang @ Fudan
 # Development started on June 6 2025
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 from copy import deepcopy
 from dropps.share.pbc import unwrap_pbc
 from dropps.fileio.pdb_reader import read_pdb, write_pdb, phrase_pdb_atoms
@@ -139,38 +139,42 @@ def editconf(args):
     print(f"## Ouput PDB file write to {output_file_name}.")
 
 prog = "editconf"
-desc = '''This program edit box configuration for a pdb file.'''
+desc = "Resize a PDB simulation box and optionally unwrap coordinates along selected axes."
 
 def getargs_editconf(argv):
 
     parser = ArgumentParser(prog=prog, description=desc)
 
     parser.add_argument('-f', '--structure', type=str, required=True, 
-                        help="PDB file which is taken as input.")
+                        help="Input structure file (.pdb).")
 
     parser.add_argument('-o', '--output', type=str, required=True, 
-                        help="PDB file which to write editted configuration.")
+                        help="Output structure file (.pdb); the extension is added if omitted.")
 
-    parser.add_argument('-x', '--x-axis', type=int, 
-                        help="Length of the simulation box to output in the x axis.")
-    parser.add_argument('-y', '--y-axis', type=int, 
-                        help="Length of the simulation box to output in the y axis.")
-    parser.add_argument('-z', '--z-axis', type=int, 
-                        help="Length of the simulation box to output in the z axis.")
+    x_size = parser.add_mutually_exclusive_group()
+    x_size.add_argument('-x', '--x-axis', type=int,
+                        help="New box length along x, in nm.")
+    x_size.add_argument('-mx', '--multiply-x-axis', type=int,
+                        help="Integer multiplier applied to the current x box length.")
 
-    parser.add_argument('-mx', '--multiply-x-axis', type=int, 
-                        help="Multiplier to act on the length of the simulation box in the x axis.")
-    parser.add_argument('-my', '--multiply-y-axis', type=int, 
-                        help="Multiplier to act on the length of the simulation box in the y axis.")
-    parser.add_argument('-mz', '--multiply-z-axis', type=int, 
-                        help="Multiplier to act on the length of the simulation box in the z axis.")
+    y_size = parser.add_mutually_exclusive_group()
+    y_size.add_argument('-y', '--y-axis', type=int,
+                        help="New box length along y, in nm.")
+    y_size.add_argument('-my', '--multiply-y-axis', type=int,
+                        help="Integer multiplier applied to the current y box length.")
+
+    z_size = parser.add_mutually_exclusive_group()
+    z_size.add_argument('-z', '--z-axis', type=int,
+                        help="New box length along z, in nm.")
+    z_size.add_argument('-mz', '--multiply-z-axis', type=int,
+                        help="Integer multiplier applied to the current z box length.")
 
     parser.add_argument('-px', '--treat-pbc-x', action='store_true', default=False, 
-                        help="Whether peridic images are treated in the x directions. ")
+                        help="Unwrap coordinates across periodic boundaries along x.")
     parser.add_argument('-py', '--treat-pbc-y', action='store_true', default=False, 
-                        help="Whether peridic images are treated in the y directions. ")
+                        help="Unwrap coordinates across periodic boundaries along y.")
     parser.add_argument('-pz', '--treat-pbc-z', action='store_true', default=False, 
-                        help="Whether peridic images are treated in the z directions. ")
+                        help="Unwrap coordinates across periodic boundaries along z.")
 
 
     args = parser.parse_args(argv)

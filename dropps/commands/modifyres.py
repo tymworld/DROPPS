@@ -1,7 +1,7 @@
 # modifyres tool in DROPPS package by Yiming Tang @ Fudan
 # Development started on Nov 10 2025
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 from copy import deepcopy
 from dropps.fileio.itp_reader import read_itp, write_itp, Atomtype_AH_DH, Atom, Bond, Angle
 from dropps.fileio.pdb_reader import read_pdb, write_pdb, phrase_pdb_atoms
@@ -17,7 +17,7 @@ import os
 import numpy as np
 
 prog = "modifyres"
-desc = '''This program add residue modifications for an itp and a pdb file.'''
+desc = "Apply residue modifications consistently to an ITP topology and PDB structure."
 
 def find_new_atom_position(coordinates, bond_length, number, n_samples=5000):
     """
@@ -82,21 +82,22 @@ def getargs_modifyres(argv):
     parser = ArgumentParser(prog=prog, description=desc)
 
     parser.add_argument('-ip', '--input-topology', type=str, required=True, 
-                        help="Input itp file.")
+                        help="Input topology file (.itp).")
     
     parser.add_argument('-if', '--input-structure', type=str, required=True, 
-                        help="Input pdb file.")
+                        help="Input structure file (.pdb).")
 
     parser.add_argument('-op', '--output-topology', type=str, required=True, 
-                        help="Output itp file with modification added.")
+                        help="Output modified topology file (.itp); the extension is added if omitted.")
 
     parser.add_argument('-of', '--output-structure', type=str, required=True, 
-                        help="Output pdb file with modification added.")
+                        help="Output modified structure file (.pdb); the extension is added if omitted.")
     
-    parser.add_argument('-ff', '--forcefield', choices=forcefield_list, help="Forcefield selection")
+    parser.add_argument('-ff', '--forcefield', choices=forcefield_list,
+                        help="Force field to use; if omitted, prompt interactively.")
 
     parser.add_argument('-m', '--modifications', type=str, nargs="+", required=True,
-                        help="modifications, format: original+number+modified, eg: S129SMP")
+                        help="Residue modifications in ORIGINAL+NUMBER+MODIFIED form, for example S129SMP.")
 
     args = parser.parse_args(argv)
 

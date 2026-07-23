@@ -1,7 +1,7 @@
 # inter-chain distance calculation tool in DROPPS package by Yiming Tang @ Fudan
 # Development started on July 21 2025
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 from dropps.share.trajectory import trajectory_class
 from dropps.fileio.filename_control import validate_extension
 from dropps.fileio.xvg_reader import write_xvg
@@ -17,44 +17,44 @@ warnings.filterwarnings("ignore", category=BiopythonDeprecationWarning)
 from MDAnalysis.transformations import unwrap
 
 prog = "odist"
-desc = '''This program calculate the inter-chain distance profiles of atom pair.'''
+desc = "Calculate distances between corresponding beads in two chain groups."
 
 def getargs_inter_distance(argv):
 
     parser = ArgumentParser(prog=prog, description=desc)
 
     parser.add_argument('-s', '--run-input', type=str, required=True, 
-                        help="TPR file containing all information for a simulation run.")
+                        help="Input DROPPS run file (.tpr) containing the system and simulation settings.")
     
     parser.add_argument('-f', '--input', type=str, required=True, 
-                    help="XTC file which is taken as input trajectory.")
+                    help="Input trajectory file (.xtc).")
     
     parser.add_argument('-n', '--index', type=str, required=False,
-                        help="Index file containing non-default groups.")
+                        help="Optional index file (.ndx) defining additional atom groups.")
     
     parser.add_argument('-ref', '--reference', type=int,
-                        help="Reference group contaning atoms for each chain, one atom for each chain")
+                        help="Reference index group containing one bead per chain; if omitted, prompt interactively.")
     
     parser.add_argument('-sel', '--selection', type=int,
-                        help="Selection group contaning atoms for each chain, one atom for each chain")
+                        help="Selection index group containing one bead per chain; if omitted, prompt interactively.")
     
     parser.add_argument('-b', '--start-time', type=int,
-                        help="Time (ns) of the first frame to calculate.")
+                        help="First trajectory time to analyze, in ns.")
 
     parser.add_argument('-e', '--end-time', type=int,
-                        help="Time (ns) of the last frame to calculate.")
+                        help="Last trajectory time to analyze, in ns.")
 
     parser.add_argument('-dt', '--delta-time', type=int,
-                        help="Intervals (ns) between two calculated frames.")
+                        help="Approximate interval between analyzed frames, in ns.")
     
     parser.add_argument('-pbc', '--treat-pbc', action='store_true', default=False,
-                        help="Treat broken molecule at periodic boundaries.")
+                        help="Unwrap molecules across periodic boundaries before analysis.")
 
     parser.add_argument('-oa', '--output-average', type=str,
-                        help="Output of chain-averaged distance as a function of time.")
+                        help="Output chain-averaged distance time series (.xvg); the extension is added if omitted.")
     
     parser.add_argument('-ov', '--output-verbose', type=str,
-                        help="Verbose output of all distances.")
+                        help="Output all pair distances as a function of time (.xvg); the extension is added if omitted.")
 
         
     args = parser.parse_args(argv)

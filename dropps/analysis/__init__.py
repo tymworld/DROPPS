@@ -3,6 +3,9 @@ from .check import check_commands
 from .contact_map_deprecate import contactmap_commands
 from .contact_number_deprecate import contact_number_commands
 from .density import density_commands
+from .coexistence import coexistence_commands
+from .exchange import exchange_commands
+from .phase_msd import phase_msd_commands
 from .gyrate import gyrate_commands
 from .inter_distance import inter_distance_commands
 from .intra_distance import intra_distance_commands
@@ -16,4 +19,5 @@ from .timecorr import timecorr_commands
 from .pdb2bond import pdb2bond_commands
 from .contact_statistic import contact_statistic_commands
 from .surface_tension import surface_tension_commands
+from .viscosity_gk import viscosity_gk_commands
 #from .sasa_mdtraj import sasa_commands

@@ -66,66 +66,77 @@ _This section is auto-generated from source. Do not edit manually._
 
 ### Modeling
 
-- `pdb2dps`: This program create pdb and top files for a given sequence.
+- `pdb2dps`: Generate coarse-grained PDB conformations and an ITP topology from a protein sequence.
   Required args: `-s/--sequence`
-- `genelastic`: This program generate elastic network for an itp file.
+- `genelastic`: Add a distance-based elastic network to an ITP topology.
   Required args: `-f/--structure`, `-p/--topology`, `-o/--output`, `-er/--elastic-residues`
-- `genmesh`: This program generate mesh for a given set of molecules.
-  Required args: `-f/--structure`, `-p/--topology`, `-n/--number`, `-oc/--output-conformation`, `-op/--output-topology`
-- `addangle`: This program add angle terms for an itp file.
+- `genmesh`: Pack one or more molecule types onto a three-dimensional simulation-box mesh.
+  Required args: `-f/--structure`, `-p/--topology`, `-n/--number`
+- `addangle`: Add angle restraints to an ITP topology.
   Required args: `-ip/--input-topology`, `-op/--output-topology`, `-al/--angle-list`
-- `editconf`: This program edit box configuration for a pdb file.
+- `editconf`: Resize a PDB simulation box and optionally unwrap coordinates along selected axes.
   Required args: `-f/--structure`, `-o/--output`
-- `grompp`: This program initates and runs an molecular dynamics simulation.
+- `grompp`: Build a DROPPS run-input file from structure, topology, and simulation parameters.
   Required args: `-f/--structure`, `-p/--topology`, `-m/--parameter`, `-o/--output`
-- `modifyres`: This program add residue modifications for an itp and a pdb file.
+- `modifyres`: Apply residue modifications consistently to an ITP topology and PDB structure.
   Required args: `-ip/--input-topology`, `-if/--input-structure`, `-op/--output-topology`, `-of/--output-structure`, `-m/--modifications`
-- `trjconv`: This program read and convert trajectory files in many ways.
-  Required args: `-s/--run-input`, `-f/--input`, `-pbc/--pbc`
-- `gsd2xtc`: This program read and convert gsd file to xtc file.
-  Required args: `-f/--input`
+- `trjconv`: Select, transform, and convert a DROPPS trajectory.
+  Required args: `-s/--run-input`, `-f/--input`, `-o/--output`
+- `gsd2xtc`: Convert a GSD trajectory to XTC format.
+  Required args: `-f/--input`, `-o/--output`
 
 ### Simulation
 
-- `mdrun`: This program initates and runs an molecular dynamics simulation.
+- `mdrun`: Run or resume a molecular-dynamics simulation from a DROPPS run-input file.
   Required args: `-s/--run-input`, `-o/--output-prefix`
 
 ### Analysis
 
-- `make_ndx`: This program generate an index file for data analysis.
+- `make_ndx`: Create or extend an atom-group index file interactively.
   Required args: `-s/--run-input`, `-o/--output`
-- `extract`: This program extract a single frame from a HPS trajectory.
-  Required args: `-s/--run-input`, `-f/--input`, `-o/--output`
-- `check`: This program check tpr, xtc, and ndx files for data analysis.
+- `extract`: Extract one trajectory frame as a PDB structure.
+  Required args: `-s/--run-input`, `-f/--input`, `-o/--output`, one of `-t/--time` or `-fm/--frame`
+- `check`: Inspect DROPPS run, trajectory, and index files before analysis.
   Required args: `-s/--run-input`
-- `density`: This program calculate the density profile of a simulation box along one axis.
+- `density`: Calculate a one-dimensional mass- or charge-density profile.
   Required args: `-s/--run-input`, `-f/--input`, `-o/--output`
-- `gyrate`: This program calculate the radius of gyration of all chains in a HPS trajectory.
+- `coexistence`: Analyze dense/dilute coexistence and interface width in a planar slab trajectory.
+  Required args: `-s/--run-input`, `-f/--input`, `-o/--output`
+- `exchange`: Analyze molecular exchange and phase residence times across a planar slab interface.
+  Required args: `-s/--run-input`, `-f/--input`, `-o/--output-prefix`
+- `phase-msd`: Calculate phase-conditioned molecular MSD with phase-translation removal in a planar slab.
+  Required args: `-s/--run-input`, `-f/--input`, `-o/--output`
+- `gyrate`: Calculate chain radii of gyration and optional distributions.
   Required args: `-s/--run-input`, `-f/--input`
-- `angle`: This program calculate the profile of angles along amino acid sequence of a protein.
+- `angle`: Calculate backbone-angle profiles and time series for equivalent protein chains.
   Required args: `-s/--run-input`, `-f/--input`
-- `idist`: This program calculate the intra-chain distance profiles of a number of atom pairs.
+- `idist`: Calculate intra-chain distance profiles for one or more bead pairs.
   Required args: `-s/--run-input`, `-f/--input`
-- `odist`: This program calculate the inter-chain distance profiles of atom pair.
+- `odist`: Calculate distances between corresponding beads in two chain groups.
   Required args: `-s/--run-input`, `-f/--input`
-- `contact`: This program calculate contact map in a residue-level resolution.
+- `contact`: Calculate residue-level contact maps and contact-number time series.
   Required args: `-s/--run-input`, `-f/--input`, `-cs/--cutoff-scheme`
-- `contact.ng`: This program calculates residue-level contact maps with memory-efficient aggregation.
+- `contact.ng`: Calculate residue-level contact maps with memory-efficient aggregation.
   Required args: `-s/--run-input`, `-f/--input`, `-cs/--cutoff-scheme`
-- `timecorr`: This program calculate residue-level time correlation functions and lifetime matrices for contact interactions.
+- `timecorr`: Calculate residue-contact correlation functions and lifetime matrices.
   Required args: `-s/--run-input`, `-f/--input`, `-cs/--cutoff-scheme`
-- `cstat`: This program perform residue-specific statistic on pre-calculated contact maps.
+- `cstat`: Calculate residue-level statistics from a precomputed contact map.
   Required args: `-m/--map-input`, `-s/--run-input`, `-o/--output`
-- `msd`: This program calculate mean square deviation of molecules within a trajectory.
+- `msd`: Calculate the mean-square displacement of a selected atom group.
+  Required args: `-s/--run-input`, `-f/--input`, `-o/--output`
+- `assembly`: Analyze the formation, size, composition, and shape of molecular assemblies.
   Required args: `-s/--run-input`, `-f/--input`
-- `assembly`: This program calculate the time evoluted formation of molecular assemblies.
-  Required args: `-s/--run-input`, `-f/--input`
-- `pdb2bond`: This program add conect record to a pdb file.
-  Required args: `-f/--input`, `-o/--output`
+- `pdb2bond`: Add PDB CONECT records from a DROPPS run file or system topology.
+  Required args: one of `-s/--run-input` or `-p/--topology`, `-f/--input`, `-o/--output`
 - `surftension`: Calculate planar-interface surface tension from a DROPPS TPR and XTC trajectory.
   Required args: `-s/--run-input`, `-f/--input`, `-o/--output`
+- `viscosity-gk`: Calculate zero-shear viscosity from a DROPPS runtime pressure tensor.
+  Required args: `-f/--input`, `-o/--output`
 
 <!-- END AUTO COMMANDS -->
+
+
+
 
 ## Typical Workflow
 
@@ -152,6 +163,206 @@ dps mdrun -s run.tpr -o run
 # 5) Analyze
 dps density -s run.tpr -f run.xtc -o density.xvg
 ```
+
+### Resume an interrupted simulation
+
+Set `nst-cp` in the MDP file to write `<output-prefix>.chk` periodically. To
+continue the same run, keep the original run input and output prefix and use:
+
+```bash
+dps mdrun -s run.tpr -o run -cpi
+```
+
+With no path after `-cpi`, DROPPS loads `run.chk`. A checkpoint at another
+location can be selected explicitly:
+
+```bash
+dps mdrun -s run.tpr -o run -cpi /path/to/run.chk
+```
+
+On restart, `nsteps` remains the target total number of production steps, not
+the number of extra steps to add. DROPPS skips minimization and warming, runs
+only the remaining production steps, and appends to the existing XTC, log, and
+stress-tensor outputs. If any output is newer than the checkpoint, it is first
+rolled back to the checkpoint step so the resumed files do not contain
+duplicate or out-of-order samples. A final checkpoint is also written after a
+successful run or a Ctrl-C interruption.
+
+OpenMM binary checkpoints require the same system definition, OpenMM version,
+compute platform, and compatible hardware. Keep the original TPR for an ordinary
+continuation. When intentionally extending a run, regenerate a compatible TPR
+whose simulation definition changes only by increasing `nsteps`.
+
+### Coexisting dense and dilute phases
+
+Analyze an equilibrated, orthorhombic planar slab with two interfaces using:
+
+```bash
+dps coexistence \
+  -s slab.tpr \
+  -f slab.xtc \
+  -o coexistence.xvg \
+  -ref 0 \
+  -sel 1 2 \
+  --axis z \
+  --bin-width 0.2 \
+  --blocks 5
+```
+
+The reference group defines the dense slab. By default, each selected frame is
+centered with the reference group's periodic first Fourier component, preventing
+slab translation from broadening the average profile. DROPPS then fits the
+reference density to a symmetric double-hyperbolic-tangent profile and reports
+the dense and dilute densities, slab width, 10--90% interface width, fit
+quality, and contiguous-block standard errors.
+
+Three centering modes are available:
+
+- `--center-mode frame` aligns every analyzed frame and is the default for
+  coexistence concentrations.
+- `--center-mode block` determines one center for each contiguous segment
+  defined by `--blocks`; this retains within-block slab motion and provides a
+  centering-sensitivity check for interface widths.
+- `--center-mode none` applies no shift and requires a trajectory whose slab is
+  already centered at the middle of the periodic box.
+
+Compare `frame` and `block` for production interface-width estimates. Dense and
+dilute plateau concentrations should be insensitive to the centering mode, while
+the apparent width can increase when longer-wavelength slab motion is retained.
+
+`coexistence.xvg` contains the centered mean profiles and the fitted reference
+profile. A companion `coexistence.csv` contains dense- and dilute-plateau
+densities for the reference and every `-sel` group, together with their block
+errors and dense-to-dilute ratios. Use `-tp number` for selected-particle number
+density in `nm^-3`; the default is mass density in `mg/mL`.
+
+The method assumes one dense planar slab in an orthorhombic periodic cell. A
+low fit R-squared value or low centering order can indicate insufficient
+equilibration, a nearly homogeneous system, multiple domains, or an unsuitable
+reference group. Use `--plateau-buffer` to change how far plateau averages stay
+away from the fitted interfaces.
+
+### Interphase exchange and residence times
+
+Track molecule-resolved phase changes in the same planar-slab geometry using:
+
+```bash
+dps exchange \
+  -s slab.tpr \
+  -f slab.xtc \
+  -n groups.ndx \
+  -o exchange \
+  -ref 0 \
+  -sel 1 2 \
+  --axis z \
+  --center-mode frame \
+  --interface-threshold 0.1 \
+  --bin-width 0.2 \
+  --blocks 5
+```
+
+The reference group is used only to locate the slab and fit its mean mass
+density. Each `-sel` group is split into topology molecules (chains), and the
+mass-weighted periodic center of mass of every selected molecule is tracked.
+For partial-molecule selections, the center uses only the selected atoms.
+
+The fitted double-tanh profile defines three spatial states. With the default
+`--interface-threshold 0.1`, dense and dilute bulk states begin outside the
+10--90% interfacial transition; positions between those cutoffs are classified
+as `interface`. These fixed cutoffs are obtained from the trajectory-mean
+profile rather than fitted separately on every frame. `--center-mode` has the
+same `frame`, `block`, and `none` meanings as `coexistence`.
+
+Two related but distinct records are produced:
+
+- A residence is every continuous interval in one of the three spatial states.
+  Initial intervals are marked left-censored and final intervals are marked
+  right-censored.
+- An exchange event is confirmed only when a molecule leaves one bulk phase and
+  reaches the opposite bulk phase. An interface excursion that returns to the
+  same bulk phase is not counted.
+
+The output prefix creates `.profile.xvg`, `.states.csv`, `.events.csv`,
+`.residence.csv`, `.survival.csv`, and `.summary.csv`. The survival file uses a
+Kaplan--Meier estimate after excluding left-censored intervals while retaining
+right-censored intervals. The summary reports occupancy, completed residence
+statistics, the Kaplan--Meier median when observable, confirmed exchange counts,
+and source-phase event rates per microsecond of exposure. Use `--no-states` to
+omit the potentially large frame-by-frame state table.
+
+Temporal resolution limits the kinetics: a molecule observed directly in the
+opposite bulk state has an unresolved transition time, reported as zero with a
+warning. Use a smaller trajectory output interval for interface-passage times
+and short residences. The method assumes each selected molecule spans less than
+half the box length along the interface normal so its periodic center can be
+unwrapped unambiguously.
+
+### Phase-resolved molecular dynamics
+
+Calculate molecular MSD separately in dense and dilute regions with:
+
+```bash
+dps phase-msd \
+  -s slab.tpr \
+  -f slab.xtc \
+  -n groups.ndx \
+  -o phase_msd.xvg \
+  -ref 0 \
+  -sel 1 2 \
+  --axis z \
+  -t xy \
+  --phases dense dilute \
+  --conditioning both \
+  --center-mode frame \
+  --max-lag 100 \
+  --blocks 5
+```
+
+Phase boundaries use the same trajectory-mean double-tanh fit as `coexistence`
+and `exchange`. Centering is used only to decide whether each molecule is in the
+dense, interface, or dilute region. Molecular dynamics are calculated from
+periodically unwrapped laboratory-frame centers, so slab motion is not silently
+removed by the spatial classification step.
+
+For every group, phase, time origin, and lag, DROPPS calculates the
+mass-weighted displacement of the eligible molecular cohort and subtracts it:
+
+```text
+delta r_intrinsic,i = delta r_i
+                      - sum_j(m_j delta r_j) / sum_j(m_j)
+
+MSD_raw = MSD_intrinsic + MSD_phase_translation
+```
+
+This removes coherent translation of the phase cohort in all dimensions chosen
+by `-t`, including tangential drift that slab-normal recentering cannot remove.
+The raw, intrinsic, and phase-translation terms are all retained in the CSV so
+the correction can be audited.
+
+Two membership definitions are available:
+
+- `continuous` uses a molecule only if it remains in the requested phase for
+  the complete interval.
+- `intermittent` requires membership at both endpoints but allows departure and
+  return between them.
+
+The default `--conditioning both` reports both definitions, while the default
+phases are `dense dilute`; add `interface` to `--phases` when enough interfacial
+molecules are present. At least two eligible molecules are required at each time
+origin by default. Increase `--min-particles` for a more stable phase-translation
+estimate.
+
+The main XVG contains intrinsic and raw MSD curves. A tidy companion CSV adds
+the translation term, contiguous time-origin block errors, contributing-pair
+counts, and the mean number of eligible molecules. A `.profile.xvg` companion
+records the fitted density and phase cutoffs.
+
+Use a fixed-volume trajectory when possible. With a varying box, pure affine
+box rescaling is excluded from the unwrapped increments and a warning is issued
+above 1% length variation. Sampling must also be frequent enough that a molecule
+does not move more than half a box length between saved frames. Phase-specific
+MSD becomes survivor-biased at long lag times, so always inspect the reported
+pair and time-origin counts rather than fitting a diffusion coefficient blindly.
 
 ### Planar surface tension
 
@@ -186,6 +397,80 @@ give consistent means before a result is treated as converged.
 This configurational estimator assumes that the equilibrium-averaged kinetic
 pressure anisotropy cancels. It does not support systems built with constrained
 bonds because the constraint virial is not available from XTC coordinates.
+
+### Runtime pressure tensor and zero-shear viscosity
+
+Green–Kubo viscosity requires the microscopic pressure tensor, including
+velocities and the configurational virial. An XTC trajectory does not contain
+enough information, so enable runtime recording in the production MDP:
+
+```ini
+pcoulp          = False
+bondtype        = bond
+nst-stress      = 10
+stress-strain   = 0.0003
+stress-output   = auto
+stress-platform = auto
+stress-precision = double
+```
+
+`stress-output = auto` writes `<mdrun-output-prefix>.stress.xvg`. Recording is
+attached after minimization and warming, so the file contains only production
+samples. Each row contains time, volume, and `Pxx Pyy Pzz Pxy Pxz Pyz` in
+`kJ mol^-1 nm^-3`.
+
+The instantaneous tensor is evaluated as
+
+```text
+P_ab = (1/V) sum_i m_i v_ia v_ib - (1/V) dU/d(epsilon_ab).
+```
+
+DROPPS obtains the configurational derivative in an isolated OpenMM Context by
+central finite differences: three diagonal deformations and three
+volume-preserving simple shears. This needs 12 potential-energy evaluations per
+reported sample, so `nst-stress` trades temporal resolution against runtime.
+Check that the result is insensitive to `stress-strain` and the sampling
+interval.
+
+Calculate the zero-shear viscosity with:
+
+```bash
+dps viscosity-gk \
+  -f run.stress.xvg \
+  -o viscosity.xvg \
+  --blocks 5
+```
+
+The output contains the shear relaxation modulus and its running integral. The
+estimator uses all six independent tensor components:
+
+```text
+G(t) = V/(5RT)  * [Cxy(t) + Cxz(t) + Cyz(t)]
+     + V/(30RT) * [Cxx-yy(t) + Cxx-zz(t) + Cyy-zz(t)]
+
+eta_0 = integral_0^infinity G(t) dt.
+```
+
+By default, DROPPS averages the last 20% of the available running integral and
+reports a standard error from contiguous trajectory blocks. Inspect the curve
+and specify a physically stable plateau for the final estimate, for example:
+
+```bash
+dps viscosity-gk \
+  -f run.stress.xvg \
+  -o viscosity.xvg \
+  --max-lag 500 \
+  --plateau-start 200 \
+  --plateau-end 400 \
+  --blocks 5
+```
+
+All correlation-time arguments are in ps. Use a fixed, orthorhombic NVT box;
+NPT data and constrained bonds are rejected. Individual-particle Langevin
+damping can change stress dynamics, so viscosity should also be checked for
+thermostat/friction sensitivity. Convergence should be tested against total
+trajectory length, block size, maximum lag, plateau window, stress sampling
+interval, and finite-difference strain.
 
 ## Notes
 

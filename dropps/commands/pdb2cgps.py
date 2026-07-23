@@ -1,7 +1,7 @@
 # seq2hoomd tool in dps package by Yiming Tang @ Fudan
 # Development started on June 6 2025
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 import re
 from tqdm import tqdm
 import itertools
@@ -453,7 +453,7 @@ def pdb2cgps(args):
 
 
 prog = "pdb2dps"
-desc = '''This program create pdb and top files for a given sequence.'''
+desc = "Generate coarse-grained PDB conformations and an ITP topology from a protein sequence."
 
 def getargs_pdb2cgps(argv):
 
@@ -461,28 +461,35 @@ def getargs_pdb2cgps(argv):
 
     parser = ArgumentParser(prog=prog, description=desc)
 
-    parser.add_argument('-s', '--sequence', type=str, help='Protein sequence', required=True)
-    parser.add_argument('-f', '--input-pdb', type=str, help="PDB file containing structure information of a chain.")
-    parser.add_argument('-ri', '--residue-index', type=int, help='Residue number of the first residue',
+    parser.add_argument('-s', '--sequence', type=str, help='One-letter protein sequence.', required=True)
+    parser.add_argument('-f', '--input-pdb', type=str,
+                        help="Optional all-atom PDB file (.pdb) used to initialize C-alpha coordinates.")
+    parser.add_argument('-ri', '--residue-index', type=int, help='Residue number assigned to the first bead.',
                         default=1)
     parser.add_argument('-ptm', '--post-translational-modification', type=str, nargs="+", 
-                        help='Post translational modification to add, format: original+number+modified, eg: S129S')
-    parser.add_argument('-r', '--radius', type=float, help='Maximum radius of gyration of generated chain', 
+                        help='Post-translational modifications in ORIGINAL+NUMBER+MODIFIED form, for example S129SMP.')
+    parser.add_argument('-r', '--radius', type=float,
+                        help='Maximum radius of gyration for a generated conformation, in nm.',
                         default=2.0)
-    parser.add_argument('-n', '--number', type=int, help='Number of conformations to generate',
+    parser.add_argument('-n', '--number', type=int, help='Number of conformations to generate.',
                         default=1)
-    parser.add_argument('-e', '--degree-extend', type=float, help="Degree of extend for generated chain (0~1)",
+    parser.add_argument('-e', '--degree-extend', type=float,
+                        help="Chain-extension fraction between 0 and 1.",
                         default = 0.5)
-    parser.add_argument('-ff', '--forcefield', choices=forcefield_list, help="Forcefield selection")
-    parser.add_argument('-oc', '--output-conformation', type=str, help="File prefix to write output configuration",
+    parser.add_argument('-ff', '--forcefield', choices=forcefield_list,
+                        help="Force field to use; if omitted, prompt interactively.")
+    parser.add_argument('-oc', '--output-conformation', type=str,
+                        help="Output PDB path or prefix; multiple conformations use numbered .pdb files.",
                         required=False)
-    parser.add_argument('-op', '--output-topology', type=str, help="File prefix to write topology file",
+    parser.add_argument('-op', '--output-topology', type=str,
+                        help="Output topology file (.itp); the extension is added if omitted.",
                         required=False)
-    parser.add_argument('-on', '--output-name', type=str, default="MOL", help="Molecule name.")
+    parser.add_argument('-on', '--output-name', type=str, default="MOL",
+                        help="Molecule name written to the ITP topology.")
     parser.add_argument('-cNTD', '--charged-NTD', action='store_true', default=False, 
-                        help="Whether N terminal is patched by an additional positive charge.")
+                        help="Add a positive charge patch to the N terminus.")
     parser.add_argument('-cCTD', '--charged-CTD', action='store_true', default=False, 
-                        help="Whether C terminal is patched by an additional negative charge.")
+                        help="Add a negative charge patch to the C terminus.")
 
     args = parser.parse_args(argv)
 

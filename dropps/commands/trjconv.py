@@ -1,7 +1,7 @@
 # trjconv tool in DROPPS package by Yiming Tang @ Fudan
 # Development started on Nov 17 2025
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 from dropps.share.trajectory import trajectory_class
 from dropps.fileio.filename_control import validate_extension
 from dropps.analysis.density import shift_density_center
@@ -15,7 +15,7 @@ from os.path import splitext
 import numpy as np
 
 prog = "trjconv"
-desc = '''This program read and convert trajectory files in many ways.'''
+desc = "Select, transform, and convert a DROPPS trajectory."
 
 def getargs_trjconv(argv):
 
@@ -24,16 +24,16 @@ def getargs_trjconv(argv):
     parser = ArgumentParser(prog=prog, description=desc)
 
     parser.add_argument('-s', '--run-input', type=str, required=True, 
-                        help="TPR file containing all information for a simulation run.")
+                        help="Input DROPPS run file (.tpr) containing the system and simulation settings.")
     
     parser.add_argument('-f', '--input', type=str, required=True, 
-                    help="XTC file which is taken as input trajectory.")
+                    help="Input trajectory file (.xtc).")
     
     parser.add_argument('-n', '--index', type=str, required=False,
-                        help="Index file containing non-default groups.")
+                        help="Optional index file (.ndx) defining additional atom groups.")
     
-    parser.add_argument('-o', '--output', type=str,
-                        help="Output file path for trajectory. Allowed filetype: pdb, xtc")
+    parser.add_argument('-o', '--output', type=str, required=True,
+                        help="Output trajectory file; the extension must be .pdb or .xtc.")
     
     #parser.add_argument('-dpc', '--dense-phase-center', type=bool, action='store_true', default=False,
     #                    help="Whether to center dense phase in the z direction")
@@ -42,17 +42,17 @@ def getargs_trjconv(argv):
     #                    help="Threshold for dense phase which is a multiplier of the highest density.")
     
     parser.add_argument('-b', '--start-time', type=int,
-                        help="Time (ns) of the first frame to calculate.")
+                        help="First trajectory time to write, in ns.")
 
     parser.add_argument('-e', '--end-time', type=int,
-                        help="Time (ns) of the last frame to calculate.")
+                        help="Last trajectory time to write, in ns.")
 
     parser.add_argument('-dt', '--delta-time', type=int,
-                        help="Intervals (ns) between two calculated frames.")
+                        help="Approximate interval between written frames, in ns.")
     
     parser.add_argument('-pbc', '--pbc', type=str, choices=["none", "atom", "mol"],
-                        default="none", required=True,
-                        help="Translation performed on each beads to treat against perodic boundary conditions.")
+                        default="none",
+                        help="Periodic-boundary treatment applied before writing the trajectory.")
 
     args = parser.parse_args(argv)
 

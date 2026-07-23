@@ -1,6 +1,8 @@
 # residue-resolved time correlation analysis in DROPPS package by Yiming Tang @ Fudan
 
-from argparse import ArgumentParser
+from argparse import SUPPRESS
+
+from dropps.share.argument_parser import ArgumentParser
 import numpy as np
 from tqdm import tqdm
 
@@ -18,7 +20,7 @@ from Bio import BiopythonDeprecationWarning
 warnings.filterwarnings("ignore", category=BiopythonDeprecationWarning)
 
 prog = "timecorr"
-desc = '''This program calculate residue-level time correlation functions and lifetime matrices for contact interactions.'''
+desc = "Calculate residue-contact correlation functions and lifetime matrices."
 
 
 def _stack_series(series_list):
@@ -132,91 +134,101 @@ def _average_corr_matrix(corr):
 
 def getargs_timecorr(argv):
 
-    parser = ArgumentParser(prog=prog, description=desc)
+    parser = ArgumentParser(
+        prog=prog,
+        description=desc,
+        epilog=(
+            "At least one correlation output (-ocrs, -ocrr, -ocss, -ocr, or "
+            "-ocs) is required in non-verbose mode."
+        ),
+    )
 
     parser.add_argument('-s', '--run-input', type=str, required=True,
-                        help="TPR file containing all information for a simulation run.")
+                        help="Input DROPPS run file (.tpr) containing the system and simulation settings.")
 
     parser.add_argument('-f', '--input', type=str, required=True,
-                        help="XTC file which is taken as input trajectory.")
+                        help="Input trajectory file (.xtc).")
 
     parser.add_argument('-n', '--index', type=str, required=False,
-                        help="Index file containing non-default groups.")
+                        help="Optional index file (.ndx) defining additional atom groups.")
 
     parser.add_argument('-ref', '--reference-group', type=str,
-                        help="Reference group of atoms (x axis of the residue pair matrix).")
+                        help="Reference index group forming the x axis of each residue-pair matrix.")
 
     parser.add_argument('-sel', '--selection-group', type=str,
-                        help="Selection group of atoms (y axis of the residue pair matrix).")
+                        help="Optional selection index group forming the y axis of cross-group matrices.")
 
     parser.add_argument('-cs', '--cutoff-scheme', type=str, choices=["global", "residue"], required=True,
-                        help="Scheme for determining inter-residue contacts.")
+                        help="Contact-cutoff scheme: one global distance or residue-specific distances.")
 
     parser.add_argument('-c', '--cutoff', type=float, default=0.7,
-                        help="Cutoff distance for contact calculation, unit is nanometer.")
+                        help="Global contact cutoff, in nm.")
 
     parser.add_argument('-cm', '--cutoff-multiplier', type=float, default=1.2,
-                        help="Factor which is multiplied to sigma value for residue-wise contact cutoff.")
+                        help="Multiplier applied to residue sigma values in the residue cutoff scheme.")
 
     parser.add_argument('-rd', '--remove-diagonal', type=int, default=2,
-                        help="Number of diagonals (i - j <= abs(rd)) to remove in intra-chain matrices.")
+                        help="Number of main and neighboring diagonals removed from intra-chain matrices.")
 
     parser.add_argument('-thr', '--threshold', type=float, default=0.5,
-                        help="Threshold used to estimate lifetime from normalized correlation decay.")
+                        help="Normalized-correlation threshold used to estimate contact lifetimes.")
 
     parser.add_argument('-ml', '--max-lag', type=float,
-                        help="Maximum lag time (ns) for the correlation function. Default: use all analyzed frames.")
+                        help="Maximum correlation lag, in ns; if omitted, use all analyzed frames.")
 
     parser.add_argument('-b', '--start-time', type=int,
-                        help="Time (ns) of the first frame to calculate.")
+                        help="First trajectory time to analyze, in ns.")
 
     parser.add_argument('-e', '--end-time', type=int,
-                        help="Time (ns) of the last frame to calculate.")
+                        help="Last trajectory time to analyze, in ns.")
 
     parser.add_argument('-dt', '--delta-time', type=int,
-                        help="Intervals (ns) between two calculated frames.")
+                        help="Approximate interval between analyzed frames, in ns.")
 
     parser.add_argument('-pbc', '--treat-pbc', action='store_true', default=False,
-                        help="Treat broken molecule at periodic boundaries.")
+                        help="Apply periodic-boundary distances during contact calculation.")
 
     parser.add_argument('-v', '--verbose', action='store_true', default=False,
-                        help="Write lag-resolved correlation tensors and lifetime matrices. Without this flag, only write lag-averaged correlation matrices.")
+                        help="Write lag-resolved correlation tensors and lifetime matrices instead of only lag-averaged matrices.")
 
-    parser.add_argument('-ot', '--otpye', dest='average_output_type', type=str, choices=["dat", "xlsx"], default="dat",
-                        help="Type of non-verbose averaged correlation matrix output files. Possible choice from dat and xlsx.")
+    parser.add_argument('-ot', '--average-output-type', dest='average_output_type',
+                        choices=["dat", "xlsx"], default="dat",
+                        help="File format for non-verbose averaged correlation matrices.")
+    parser.add_argument('--otpye', dest='average_output_type', choices=["dat", "xlsx"],
+                        default=SUPPRESS, help=SUPPRESS)
 
     parser.add_argument('-ocrs', '--output-corr-inter-reference-selection', type=str,
-                        help="Output path for inter-chain reference-selection correlations. Verbose mode writes a lag-resolved NPZ tensor; non-verbose mode writes a lag-averaged 2D matrix.")
+                        help="Output inter-chain reference-selection correlations; verbose mode writes .npz, otherwise --average-output-type is used.")
 
     parser.add_argument('-ocrr', '--output-corr-inter-reference-reference', type=str,
-                        help="Output path for inter-chain reference-reference correlations. Verbose mode writes a lag-resolved NPZ tensor; non-verbose mode writes a lag-averaged 2D matrix.")
+                        help="Output inter-chain reference-reference correlations; verbose mode writes .npz, otherwise --average-output-type is used.")
 
     parser.add_argument('-ocss', '--output-corr-inter-selection-selection', type=str,
-                        help="Output path for inter-chain selection-selection correlations. Verbose mode writes a lag-resolved NPZ tensor; non-verbose mode writes a lag-averaged 2D matrix.")
+                        help="Output inter-chain selection-selection correlations; verbose mode writes .npz, otherwise --average-output-type is used.")
 
     parser.add_argument('-ocr', '--output-corr-intra-reference', type=str,
-                        help="Output path for intra-chain reference correlations. Verbose mode writes a lag-resolved NPZ tensor; non-verbose mode writes a lag-averaged 2D matrix.")
+                        help="Output intra-chain reference correlations; verbose mode writes .npz, otherwise --average-output-type is used.")
 
     parser.add_argument('-ocs', '--output-corr-intra-selection', type=str,
-                        help="Output path for intra-chain selection correlations. Verbose mode writes a lag-resolved NPZ tensor; non-verbose mode writes a lag-averaged 2D matrix.")
+                        help="Output intra-chain selection correlations; verbose mode writes .npz, otherwise --average-output-type is used.")
 
     parser.add_argument('-olrs', '--output-lifetime-inter-reference-selection', type=str,
-                        help="Matrix file to write lifetime of inter-chain reference-selection contacts. Only used in verbose mode.")
+                        help="Output inter-chain reference-selection lifetime matrix in verbose mode.")
 
     parser.add_argument('-olrr', '--output-lifetime-inter-reference-reference', type=str,
-                        help="Matrix file to write lifetime of inter-chain reference-reference contacts. Only used in verbose mode.")
+                        help="Output inter-chain reference-reference lifetime matrix in verbose mode.")
 
     parser.add_argument('-olss', '--output-lifetime-inter-selection-selection', type=str,
-                        help="Matrix file to write lifetime of inter-chain selection-selection contacts. Only used in verbose mode.")
+                        help="Output inter-chain selection-selection lifetime matrix in verbose mode.")
 
     parser.add_argument('-olr', '--output-lifetime-intra-reference', type=str,
-                        help="Matrix file to write lifetime of intra-chain reference contacts. Only used in verbose mode.")
+                        help="Output intra-chain reference lifetime matrix in verbose mode.")
 
     parser.add_argument('-ols', '--output-lifetime-intra-selection', type=str,
-                        help="Matrix file to write lifetime of intra-chain selection contacts. Only used in verbose mode.")
+                        help="Output intra-chain selection lifetime matrix in verbose mode.")
 
     parser.add_argument('-otype', '--output-type', type=str, choices=["dat", "xpm", "xlsx"], default="dat",
-                        help="Type of verbose lifetime matrix output files. Possible choice from dat, xpm, and xlsx.")
+                        help="File format for verbose lifetime-matrix outputs.")
 
     args = parser.parse_args(argv)
     return args

@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 from pathlib import Path
 
 import numpy as np
-import openmm
-from openmm import unit
 from tqdm import tqdm
 
 from dropps.analysis.surface_tension_core import (
@@ -19,6 +17,10 @@ from dropps.analysis.surface_tension_core import (
 )
 from dropps.fileio.filename_control import validate_extension
 from dropps.share.command_class import single_command
+from dropps.share.openmm_energy import (
+    create_energy_context,
+    potential_energy_kj_per_mol,
+)
 from dropps.share.trajectory import trajectory_class
 
 
@@ -29,76 +31,6 @@ desc = (
 
 ANGSTROM_TO_NM = 0.1
 PS_TO_NS = 0.001
-
-
-def _platform_properties(platform, precision, device, threads):
-    property_names = set(platform.getPropertyNames())
-    properties = {}
-    if "Precision" in property_names:
-        properties["Precision"] = precision
-    if device is not None and "DeviceIndex" in property_names:
-        properties["DeviceIndex"] = str(device)
-    if threads is not None and "Threads" in property_names:
-        properties["Threads"] = str(threads)
-    return properties
-
-
-def create_energy_context(
-    system,
-    platform_name="auto",
-    precision="double",
-    device=None,
-    threads=None,
-):
-    """Create an OpenMM Context, falling back across platforms for ``auto``."""
-
-    available = {
-        openmm.Platform.getPlatform(index).getName(): openmm.Platform.getPlatform(index)
-        for index in range(openmm.Platform.getNumPlatforms())
-    }
-    if platform_name.lower() == "auto":
-        candidates = [
-            name for name in ("CUDA", "OpenCL", "CPU", "Reference") if name in available
-        ]
-    else:
-        matching = [name for name in available if name.lower() == platform_name.lower()]
-        if not matching:
-            raise ValueError(
-                f"OpenMM platform '{platform_name}' is unavailable. "
-                f"Available platforms: {', '.join(available)}."
-            )
-        candidates = matching
-
-    failures = []
-    for candidate in candidates:
-        platform = available[candidate]
-        properties = _platform_properties(platform, precision, device, threads)
-        integrator = openmm.VerletIntegrator(0.001 * unit.picoseconds)
-        try:
-            context = openmm.Context(system, integrator, platform, properties)
-        except Exception as exc:
-            failures.append(f"{candidate}: {exc}")
-            if platform_name.lower() != "auto":
-                raise RuntimeError(
-                    f"Failed to create an OpenMM Context on {candidate}: {exc}"
-                ) from exc
-            continue
-        return context, integrator, candidate, properties
-
-    raise RuntimeError(
-        "Could not create an OpenMM energy-evaluation Context. " + " | ".join(failures)
-    )
-
-
-def potential_energy_kj_per_mol(context, positions_nm, box_vectors_nm):
-    """Evaluate potential energy for one explicitly supplied configuration."""
-
-    box = np.asarray(box_vectors_nm, dtype=float)
-    vectors = [openmm.Vec3(*row) * unit.nanometer for row in box]
-    context.setPeriodicBoxVectors(*vectors)
-    context.setPositions(np.asarray(positions_nm, dtype=float) * unit.nanometer)
-    state = context.getState(getEnergy=True)
-    return state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
 
 
 def evaluate_frame_surface_tension(
@@ -237,19 +169,19 @@ def getargs_surface_tension(argv):
         "-s",
         "--run-input",
         required=True,
-        help="DROPPS TPR file containing the OpenMM system and topology.",
+        help="Input DROPPS run file (.tpr) containing the OpenMM system and topology.",
     )
     parser.add_argument(
         "-f",
         "--input",
         required=True,
-        help="XTC trajectory of an equilibrated planar slab.",
+        help="Input equilibrated planar-slab trajectory file (.xtc).",
     )
     parser.add_argument(
         "-o",
         "--output",
         required=True,
-        help="Output XVG file containing gamma(t) and running averages.",
+        help="Output surface-tension time series (.xvg); the extension is added if omitted.",
     )
     parser.add_argument(
         "-b",
@@ -273,7 +205,7 @@ def getargs_surface_tension(argv):
         "--axis",
         choices=("x", "y", "z"),
         default="z",
-        help="Interface-normal axis. Default: z.",
+        help="Interface-normal axis.",
     )
     parser.add_argument(
         "--strain",
@@ -282,40 +214,40 @@ def getargs_surface_tension(argv):
         default=[3.0e-4],
         help=(
             "One or more positive finite-difference strains. Supplying several "
-            "values provides a convergence check. Default: 3e-4."
+            "values provides a convergence check."
         ),
     )
     parser.add_argument(
         "--interfaces",
         type=int,
         default=2,
-        help="Number of planar interfaces in the periodic cell. Default: 2.",
+        help="Number of planar interfaces in the periodic cell.",
     )
     parser.add_argument(
         "--blocks",
         type=int,
         default=5,
-        help="Number of contiguous blocks used for the standard error. Default: 5.",
+        help="Number of contiguous blocks used for the standard error.",
     )
     parser.add_argument(
         "--platform",
         default="auto",
-        help="OpenMM platform name, or auto. Default: auto.",
+        help="OpenMM platform name, or auto for automatic selection.",
     )
     parser.add_argument(
         "--precision",
         choices=("single", "mixed", "double"),
         default="double",
-        help="GPU/OpenCL energy precision. Default: double.",
+        help="GPU/OpenCL energy precision.",
     )
     parser.add_argument(
         "--device",
-        help="Optional OpenMM GPU/OpenCL device index.",
+        help="OpenMM GPU/OpenCL device index.",
     )
     parser.add_argument(
         "--threads",
         type=int,
-        help="Optional number of CPU platform threads.",
+        help="Number of OpenMM CPU platform threads.",
     )
     return parser.parse_args(argv)
 

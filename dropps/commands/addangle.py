@@ -1,7 +1,7 @@
 # addangle tool in CGPS.ng package by Yiming Tang @ Fudan
 # Development started on June 11 2025
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 from copy import deepcopy
 from dropps.fileio.itp_reader import read_itp, write_itp, Angle
 from openmm.unit import degree, kilojoule_per_mole, radian
@@ -68,20 +68,20 @@ def addangle(args):
     print(f"## Output topology file written to {output_itp_name}.")
 
 prog = "addangle"
-desc = '''This program add angle terms for an itp file.'''
+desc = "Add angle restraints to an ITP topology."
 
 def getargs_addangle(argv):
 
     parser = ArgumentParser(prog=prog, description=desc)
 
     parser.add_argument('-ip', '--input-topology', type=str, required=True, 
-                        help="Input itp file.")
+                        help="Input topology file (.itp).")
 
     parser.add_argument('-op', '--output-topology', type=str, required=True, 
-                        help="Output itp file with secondary structure constrains added.")
+                        help="Output topology file (.itp) with angle restraints; the extension is added if omitted.")
 
     parser.add_argument('-al', '--angle-list', type=str, required=True,
-                        help="ASCII File containing angle information. Format: \"ID-start-with-1 theta k\"")
+                        help="Input text file with one 'BEAD_ID ANGLE_DEG FORCE_CONSTANT' record per line; bead IDs are 1-based.")
 
     args = parser.parse_args(argv)
 
@@ -89,4 +89,3 @@ def getargs_addangle(argv):
 
 from dropps.share.command_class import single_command
 addangle_commands = single_command("addangle", getargs_addangle, addangle, desc)
-

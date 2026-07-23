@@ -1,7 +1,9 @@
 # pdb2bond tool that add conect record to a pdb file in DROPPS package by Yiming Tang @ Fudan
 # Development started on Jan 31 2026
 
-from argparse import ArgumentParser
+from argparse import SUPPRESS
+
+from dropps.share.argument_parser import ArgumentParser
 
 from dropps.fileio.pdb_reader import read_pdb, write_pdbData, phrase_pdb_atoms
 from dropps.fileio.itp_reader import read_itp
@@ -13,26 +15,29 @@ import re
 import numpy as np
 
 prog = "pdb2bond"
-desc = '''This program add conect record to a pdb file.'''
+desc = "Add PDB CONECT records from a DROPPS run file or system topology."
 
 def getargs_pdb2bond(argv):
 
     parser = ArgumentParser(prog=prog, description=desc)
 
-    parser.add_argument('-s', '--run-input', type=str, 
-                        help="TPR file containing all information for a simulation run.")
-    
-    parser.add_argument('-p', '--topology', type=str,
-                        help="TOP file containing information for a simulation system")
+    topology_source = parser.add_mutually_exclusive_group(required=True, section="input")
+    topology_source.add_argument('-s', '--run-input', type=str, metavar="FILE",
+                                 help="Input DROPPS run file (.tpr) containing system bonds.")
+    topology_source.add_argument('-p', '--topology', type=str, metavar="FILE",
+                                 help="Input system topology file (.top) containing system bonds.")
     
     parser.add_argument('-f', '--input', type=str, required=True, 
-                    help="PDB file which is taken as input.")
+                    help="Input structure file (.pdb).")
     
     parser.add_argument('-o', '--output', type=str, required=True,
-                    help="PDB file to write output.")
+                    help="Output structure file (.pdb) containing CONECT records.")
     
-    parser.add_argument('-noa', '--not-obmit-atom-type', action='store_true', default=False,
-                        help="By default, atom type field is obmitted and all atom treated as Carbon. This option disables that behavior.")
+    parser.add_argument('-noa', '--preserve-atom-types', dest='preserve_atom_types',
+                        action='store_true', default=False,
+                        help="Preserve input element fields instead of writing every bead as carbon.")
+    parser.add_argument('--not-obmit-atom-type', dest='preserve_atom_types',
+                        action='store_true', default=SUPPRESS, help=SUPPRESS)
     
     args = parser.parse_args(argv)
     return args
@@ -164,7 +169,7 @@ def pdb2bond(args):
     
     # We now write
 
-    if not args.not_obmit_atom_type:
+    if not args.preserve_atom_types:
         pdb_data.elements = ["C"] * len(pdb_data.elements)
 
     try:

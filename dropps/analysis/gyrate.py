@@ -1,7 +1,7 @@
 # gyrate tool in DROPPS package by Yiming Tang @ Fudan
 # Development started on July 18 2025
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 from dropps.share.trajectory import trajectory_class
 from openmm.unit import nanosecond, picosecond
 from tqdm import tqdm
@@ -17,7 +17,7 @@ warnings.filterwarnings("ignore", category=BiopythonDeprecationWarning)
 
 from MDAnalysis.transformations import unwrap
 prog = "gyrate"
-desc = '''This program calculate the radius of gyration of all chains in a HPS trajectory.'''
+desc = "Calculate chain radii of gyration and optional distributions."
 
 def radius_of_gyration(positions, masses):
 
@@ -27,43 +27,47 @@ def radius_of_gyration(positions, masses):
 
 def getargs_gyrate(argv):
 
-    parser = ArgumentParser(prog=prog, description=desc)
+    parser = ArgumentParser(
+        prog=prog,
+        description=desc,
+        epilog="At least one output option (-ov, -oa, or -oh) is required.",
+    )
 
     parser.add_argument('-s', '--run-input', type=str, required=True, 
-                        help="TPR file containing all information for a simulation run.")
+                        help="Input DROPPS run file (.tpr) containing the system and simulation settings.")
 
     parser.add_argument('-f', '--input', type=str, required=True, 
-                    help="XTC file which is taken as input trajectory.")
+                    help="Input trajectory file (.xtc).")
 
     parser.add_argument('-n', '--index', type=str, required=False,
-                        help="Index file containing non-default groups.")
+                        help="Optional index file (.ndx) defining additional atom groups.")
     
     parser.add_argument('-sel', '--selection-calculate', type=int, nargs='+',
-                        help="Groups of atoms on which the radius of gyrations will be printed")
+                        help="Index groups whose chain radii of gyration are calculated; if omitted, prompt interactively.")
     
     parser.add_argument('-b', '--start-time', type=int,
-                        help="Time (ns) of the first frame to calculate.")
+                        help="First trajectory time to analyze, in ns.")
 
     parser.add_argument('-e', '--end-time', type=int,
-                        help="Time (ns) of the last frame to calculate.")
+                        help="Last trajectory time to analyze, in ns.")
 
     parser.add_argument('-dt', '--delta-time', type=int,
-                        help="Intervals (ns) between two calculated frames.")
+                        help="Approximate interval between analyzed frames, in ns.")
     
     parser.add_argument('-pbc', '--treat-pbc', action='store_true', default=False,
-                        help="Treat broken molecule at periodic boundaries.")
+                        help="Unwrap molecules across periodic boundaries before analysis.")
 
     parser.add_argument('-ov', '--output-verbose', type=str, required=False, 
-                        help="XVG file to write verbose Rg for each group as a function of time.")
+                        help="Output per-chain radius-of-gyration time series (.xvg); the extension is added if omitted.")
 
     parser.add_argument('-oa', '--output-average', type=str, required=False, 
-                        help="XVG file to write Rg averaged for group as a function of time.")
+                        help="Output group-averaged radius-of-gyration time series (.xvg); the extension is added if omitted.")
 
     parser.add_argument('-oh', '--output-histogram', type=str, required=False, 
-                        help="XVG file to write Rg distributions.")
+                        help="Output radius-of-gyration distribution (.xvg); the extension is added if omitted.")
 
     parser.add_argument('-bw', '--bin-width', type=float, default=0.1,
-                        help="Bin width of output distribution, unit is nanometer.")
+                        help="Histogram bin width, in nm.")
 
     args = parser.parse_args(argv)
 

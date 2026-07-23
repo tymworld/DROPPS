@@ -1,7 +1,7 @@
 # extract tool in DROPPS package by Yiming Tang @ Fudan
 # Development started on Sep 2 2025
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 from dropps.share.trajectory import trajectory_class
 from dropps.fileio.pdb_reader import write_pdb
 from dropps.fileio.filename_control import validate_extension
@@ -14,7 +14,7 @@ from MDAnalysis.analysis import lineardensity as lin
 
 from MDAnalysis.transformations import unwrap
 prog = "extract"
-desc = '''This program extract a single frame from a HPS trajectory.'''
+desc = "Extract one trajectory frame as a PDB structure."
 
 
 def getargs_extract(argv):
@@ -22,37 +22,37 @@ def getargs_extract(argv):
     parser = ArgumentParser(prog=prog, description=desc)
 
     parser.add_argument('-s', '--run-input', type=str, required=True, 
-                        help="TPR file containing all information for a simulation run.")
+                        help="Input DROPPS run file (.tpr) containing the system and simulation settings.")
 
     parser.add_argument('-f', '--input', type=str, required=True, 
-                    help="XTC file which is taken as input trajectory.")
+                    help="Input trajectory file (.xtc).")
     
     parser.add_argument('-o', '--output', type=str, required=True, 
-                    help="PDB file which to write the single frame.")
+                    help="Output structure file (.pdb); the extension is added if omitted.")
 
     parser.add_argument('-n', '--index', type=str, required=False,
-                        help="Index file containing non-default groups.")
+                        help="Optional index file (.ndx) defining additional atom groups.")
     
     #parser.add_argument('-sel', '--selection', type=int, nargs='+',
     #                    help="Groups of atoms to output")
     
     parser.add_argument('-selfit', '--selection-fit', type=int,
-                        help="Group of atoms on which the dense phase is determined.")
+                        help="Index group used to locate the dense phase; if omitted, prompt interactively.")
     
     parser.add_argument('-pbc', '--pbc', type=str, choices=["mol", "atom"], default="mol",
-                        help="Mol means make all molecules whole, atom means put all atoms in the box.")
+                        help="Periodic-boundary treatment: mol makes molecules whole; atom wraps individual atoms into the box.")
     
     parser.add_argument('-c', '--center', type=str, choices=["x", "y", "z"], 
-                        help="Center the dense phase at specified coordinates before extraction.")
+                        help="Center the dense phase along the selected axis before extraction.")
     
     parser.add_argument('-dpt', '--dense-phase-threshold', default=0.5, type=float,
-                        help="Threshold for dense phase which is a multiplier of the highest density.")
+                        help="Dense-phase threshold as a fraction of the maximum density.")
     
-    parser.add_argument('-t', '--time', type=int,
-                        help="Time (ns) of the frame to extract.")
-    
-    parser.add_argument('-fm', '--frame', type=int,
-                        help="Frame index to extract.")
+    frame_selector = parser.add_mutually_exclusive_group(required=True)
+    frame_selector.add_argument('-t', '--time', type=int,
+                                help="Trajectory time of the frame to extract, in ns.")
+    frame_selector.add_argument('-fm', '--frame', type=int,
+                                help="Zero-based trajectory frame index to extract.")
 
     args = parser.parse_args(argv)
 

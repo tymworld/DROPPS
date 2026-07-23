@@ -1,7 +1,7 @@
 # contact map in DROPPS package by Yiming Tang @ Fudan
 # Development started on July 18 2025
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 from dropps.share.trajectory import trajectory_class
 from dropps.fileio.filename_control import validate_extension
 from dropps.fileio.xpm_reader import write_xpm

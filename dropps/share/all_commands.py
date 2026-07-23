@@ -20,6 +20,9 @@ commands_analysis = [dropps.analysis.make_ndx.make_ndx_commands,
                      dropps.analysis.extract.extract_commands,
                      dropps.analysis.check.check_commands,
                      dropps.analysis.density.density_commands,
+                     dropps.analysis.coexistence.coexistence_commands,
+                     dropps.analysis.exchange.exchange_commands,
+                     dropps.analysis.phase_msd.phase_msd_commands,
                      dropps.analysis.gyrate.gyrate_commands,
                      #dropps.analysis.contact_map.contactmap_commands,
                      dropps.analysis.angle.angle_commands,
@@ -33,7 +36,8 @@ commands_analysis = [dropps.analysis.make_ndx.make_ndx_commands,
                      dropps.analysis.msd.msd_commands,
                      dropps.analysis.assembly.assembly_commands,
                      dropps.analysis.pdb2bond.pdb2bond_commands,
-                     dropps.analysis.surface_tension.surface_tension_commands]
+                     dropps.analysis.surface_tension.surface_tension_commands,
+                     dropps.analysis.viscosity_gk.viscosity_gk_commands]
                      #dropps.analysis.sasa_mdtraj.sasa_commands]
 
 all_commands = all_commands_class(commands_modelling + commands_simulation + commands_analysis)

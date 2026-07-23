@@ -1,7 +1,7 @@
 # Mean square deviation (MSD) tool in DROPPS package by Yiming Tang @ Fudan
 # Development started on September 16 2025
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 from dropps.share.trajectory import trajectory_class
 from dropps.fileio.filename_control import validate_extension
 from dropps.fileio.xvg_reader import write_xvg
@@ -19,7 +19,7 @@ import numpy as np
 import MDAnalysis.analysis.msd
 
 prog = "msd"
-desc = '''This program calculate mean square deviation of molecules within a trajectory.'''
+desc = "Calculate the mean-square displacement of a selected atom group."
 
 
 def getargs_msd(argv):
@@ -27,32 +27,32 @@ def getargs_msd(argv):
     parser = ArgumentParser(prog=prog, description=desc)
 
     parser.add_argument('-s', '--run-input', type=str, required=True, 
-                        help="TPR file containing all information for a simulation run.")
+                        help="Input DROPPS run file (.tpr) containing the system and simulation settings.")
 
     parser.add_argument('-f', '--input', type=str, required=True, 
-                    help="XTC file which is taken as input trajectory.")
+                    help="Input trajectory file (.xtc).")
 
     parser.add_argument('-n', '--index', type=str, required=False,
-                        help="Index file containing non-default groups.")
+                        help="Optional index file (.ndx) defining additional atom groups.")
     
-    parser.add_argument('-sel', '--selection', type=int, nargs='+',
-                        help="Groups of atoms on which the mean square deviation will be printed")
+    parser.add_argument('-sel', '--selection', type=int,
+                        help="Index group whose mean-square displacement is calculated; if omitted, prompt interactively.")
     
     parser.add_argument('-t', '--msd-type', choices=['xyz', 'xy', 'yz', 'xz', 'x', 'y', 'z'],
                         default='xyz', type=str,
-                        help="Desired dimensions to be included in the MSD")
+                        help="Cartesian dimensions included in the MSD.")
     
     parser.add_argument('-b', '--start-time', type=int,
-                        help="Time (ns) of the first frame to calculate.")
+                        help="First trajectory time to analyze, in ns.")
 
     parser.add_argument('-e', '--end-time', type=int,
-                        help="Time (ns) of the last frame to calculate.")
+                        help="Last trajectory time to analyze, in ns.")
 
     parser.add_argument('-dt', '--delta-time', type=int,
-                        help="Intervals (ns) between two calculated frames.")
+                        help="Approximate interval between analyzed frames, in ns.")
 
-    parser.add_argument('-o', '--output', type=str, required=False, 
-                        help="XVG file to write verbose msd for each group as a function of time.")
+    parser.add_argument('-o', '--output', type=str, required=True,
+                        help="Output mean-square-displacement time series (.xvg); the extension is added if omitted.")
 
     args = parser.parse_args(argv)
 
@@ -109,4 +109,3 @@ def msd(args):
 
 from dropps.share.command_class import single_command
 msd_commands = single_command(prog, getargs_msd, msd, desc)
-

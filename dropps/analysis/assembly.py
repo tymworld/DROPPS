@@ -1,7 +1,9 @@
 # assembly calculation tool in DROPPS package by Yiming Tang @ Fudan
 # Development started on Jan 26 2026
 
-from argparse import ArgumentParser
+from argparse import SUPPRESS
+
+from dropps.share.argument_parser import ArgumentParser
 
 from dropps.fileio.filename_control import validate_extension
 
@@ -19,7 +21,7 @@ from MDAnalysis.lib.nsgrid import FastNS
 import numpy as np
 
 prog = "assembly"
-desc = '''This program calculate the time evoluted formation of molecular assemblies.'''
+desc = "Analyze the formation, size, composition, and shape of molecular assemblies."
 
 def rg_tensor_principal_components(pos, masses=None, box=None):
     """
@@ -124,61 +126,63 @@ def getargs_assembly(argv):
     parser = ArgumentParser(prog=prog, description=desc)
 
     parser.add_argument('-s', '--run-input', type=str, required=True, 
-                    help="TPR file containing all information for a simulation run.")
+                    help="Input DROPPS run file (.tpr) containing the system and simulation settings.")
     
     parser.add_argument('-f', '--input', type=str, required=True, 
-                    help="XTC file which is taken as input trajectory.")
+                    help="Input trajectory file (.xtc).")
     
     parser.add_argument('-n', '--index', type=str, required=False,
-                    help="Index file containing non-default groups.")
+                    help="Optional index file (.ndx) defining additional atom groups.")
     
     parser.add_argument('-ref', '--reference-group', type=int,
-                    help="Reference group of atoms to determine clusters.")
+                    help="Reference index group used to determine clusters; if omitted, prompt interactively.")
     
     parser.add_argument('-sel', '--selection-group', type=int, nargs='+',
-                    help="Groups of atoms on which their number within each cluster will be printed")
+                    help="Index groups whose molecular fractions in clusters are reported; if omitted, prompt interactively.")
     
     parser.add_argument('-pbc', '--treat-pbc', action='store_true', default=False,
-                        help="Treat broken molecule at periodic boundaries.")
+                        help="Apply periodic-boundary distances during cluster detection.")
     
     parser.add_argument('-c', '--cutoff', type=float, default=0.7,
-                        help="Cutoff distance for contact calculation, unit is nanometer.")
+                        help="Bead-contact cutoff used for cluster detection, in nm.")
     
-    parser.add_argument('-t', '--threashold', type=int, default=5,
-                        help="Threashold number of contacts between two chains to define an assembly.")
+    parser.add_argument('-t', '--threshold', type=int, default=5,
+                        help="Minimum number of bead contacts required to connect two chains.")
+    parser.add_argument('--threashold', dest='threshold', type=int,
+                        default=SUPPRESS, help=SUPPRESS)
     
     parser.add_argument('-b', '--start-time', type=int,
-                        help="Time (ns) of the first frame to calculate.")
+                        help="First trajectory time to analyze, in ns.")
 
     parser.add_argument('-e', '--end-time', type=int,
-                        help="Time (ns) of the last frame to calculate.")
+                        help="Last trajectory time to analyze, in ns.")
     
     parser.add_argument('-dt', '--delta-time', type=int,
-                        help="Intervals (ns) between two calculated frames.")
+                        help="Approximate interval between analyzed frames, in ns.")
 
     parser.add_argument('-cn', '--cluster-number', type=str,
-                        help="Number of clusters as a function of time.")
+                        help="Output cluster-count time series (.xvg); the extension is added if omitted.")
     
     parser.add_argument('-cs', '--cluster-size', type=str, 
-                        help="Size of the largest clusters as a function of time.")
+                        help="Output largest-cluster size time series (.xvg); the extension is added if omitted.")
     
     parser.add_argument('-csd', '--cluster-size-distribution', type=str, 
-                        help="Distribution of cluster sizes at each time frame.")
+                        help="Output per-frame cluster-size distributions (.xvg); the extension is added if omitted.")
     
     parser.add_argument('-mf', '--molecule-fraction', type=str,
-                        help="Molecular fraction of each selection group in large clusters.")
+                        help="Output selected-group fractions in large clusters (.xvg); the extension is added if omitted.")
     
     parser.add_argument('-mfc', '--molecule-fraction-cutoff', type=int, default=10,
-                        help="Cutoff size to define large clusters for molecular fraction calculation.")
+                        help="Minimum cluster size used for molecular-fraction and shape analyses.")
     
     parser.add_argument('-rgl', '--radius-gyration-largest', type=str,
-                        help="Radius of gyration of the largest cluster as a function of time.")
+                        help="Output largest-cluster radius-of-gyration time series (.xvg); the extension is added if omitted.")
     
     parser.add_argument('-asp', '--asphericity', type=str,
-                        help="Asphericity values of all large clusters as a function of time.")
+                        help="Output asphericity of large clusters (.xvg); the extension is added if omitted.")
     
     parser.add_argument('-elp', '--ellipticity', type=str,
-                        help="Ellipticity values of all large clusters as a function of time.")
+                        help="Output ellipticity of large clusters (.xvg); the extension is added if omitted.")
     
     
     args = parser.parse_args(argv)
@@ -313,7 +317,7 @@ def assembly(args):
 
         # We now determine clusters
 
-        adjancy = (mats >= args.threashold)
+        adjancy = (mats >= args.threshold)
         graph = csr_matrix(adjancy)
         n_components, new_labels = connected_components(graph, directed=False, return_labels=True)
 

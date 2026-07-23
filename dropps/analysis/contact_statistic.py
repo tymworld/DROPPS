@@ -1,14 +1,14 @@
 # contact statistic toolin DROPPS package by Yiming Tang @ Fudan
 # Development started on Feb 2 2026
 
-from argparse import ArgumentParser, RawDescriptionHelpFormatter
+from dropps.share.argument_parser import ArgumentParser, RawDescriptionHelpFormatter
 import numpy as np
 
 from dropps.share.trajectory import trajectory_class
 from dropps.fileio.filename_control import validate_extension
 
 prog = "cstat"
-desc = '''This program perform residue-specific statistic on pre-calculated contact maps.'''
+desc = "Calculate residue-level statistics from a precomputed contact map."
 
 known_grouping_schemes = {
     'HPST': {
@@ -64,34 +64,34 @@ def getargs_contact_statistic(argv):
 
     parser = ArgumentParser(prog=prog, description=full_desc, formatter_class=RawDescriptionHelpFormatter)    
     parser.add_argument('-m', '--map-input', type=str, required=True,
-                        help='Input contact map (dat) file.')
+                        help='Input contact-map matrix file (.dat).')
     
     parser.add_argument('-s', '--run-input', type=str, required=True, 
-                        help="TPR file containing all information for a simulation run.")
+                        help="Input DROPPS run file (.tpr) containing the system topology.")
     
     parser.add_argument('-ref', '--reference-group', type=int,
-                        help="Reference group of atoms (x axis of the contact map).")
+                        help="Reference index group corresponding to the contact-map x axis.")
     
     parser.add_argument('-sel', '--selection-group', type=int,
-                        help="Selection group of atoms (y axis of the contact map).")
+                        help="Selection index group corresponding to the contact-map y axis.")
         
     parser.add_argument('-n', '--index', type=str, required=False,
-                        help="Index file containing non-default groups.")
+                        help="Optional index file (.ndx) defining additional atom groups.")
 
     parser.add_argument('-o', '--output', type=str, required=True,
-                        help='Output statistic file (excel format).')
+                        help='Output Excel workbook (.xlsx); the extension is added if omitted.')
     
     parser.add_argument('-gr', '--group-residue', action='store_true', default=False,
-                        help='Group residues by their types for statistics.')
+                        help='Aggregate residues into residue-type groups.')
     
     parser.add_argument('-gs', '--group-scheme', type=str, choices=list(known_grouping_schemes.keys()), default=None,
-                        help='Grouping scheme for residue grouping. Default: None.')
+                        help='Predefined residue-grouping scheme.')
     
     parser.add_argument('-gf', '--group-file', type=str, default=None,
-                        help='Custom grouping scheme file. Each line defines a group: GroupName Abbreviation Residue1 Residue2 ...')
+                        help='Optional custom grouping file with GROUP_NAME ABBREVIATION RESIDUE... on each line.')
 
     parser.add_argument('-ag', '--aggregate', type=str, choices=['sum', 'average'], default='sum',
-                        help='Aggregation method for grouped contact statistics. Choices: sum, average. Default: sum.')
+                        help='Aggregation method for grouped contact statistics.')
     
     args = parser.parse_args(argv)
 

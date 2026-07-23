@@ -21,6 +21,13 @@ parameters_dict_template = {
     # Output control
     "nst_xout"    : 1000,
     "nst_cp"      : 10000,
+    "nst_stress"  : 0,
+    "stress_strain"    : 0.0003,
+    "stress_output"    : "auto",
+    "stress_platform"  : "auto",
+    "stress_precision" : "double",
+    "stress_device"    : "auto",
+    "stress_threads"   : 0,
     #"nstvout"    : 10000,
 
     "nst_screenlog"  : 1000,

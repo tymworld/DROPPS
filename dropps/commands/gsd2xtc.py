@@ -1,7 +1,7 @@
 # gsd2xtc tool in DROPPS package by Yiming Tang @ Fudan
 # Development started on Nov 17 2025
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 
 import MDAnalysis as mda
 from MDAnalysis.coordinates import XTC
@@ -12,7 +12,7 @@ from dropps.fileio.filename_control import validate_extension
 from tqdm import tqdm
 
 prog = "gsd2xtc"
-desc = '''This program read and convert gsd file to xtc file.'''
+desc = "Convert a GSD trajectory to XTC format."
 
 def getargs_gsd2xtc(argv):
 
@@ -21,13 +21,13 @@ def getargs_gsd2xtc(argv):
     parser = ArgumentParser(prog=prog, description=desc)
     
     parser.add_argument('-f', '--input', type=str, required=True, 
-                    help="GSD file which is taken as input trajectory.")
+                    help="Input trajectory file (.gsd).")
         
-    parser.add_argument('-o', '--output', type=str,
-                        help="Output file path for trajectory. Allowed filetype: xtc")
+    parser.add_argument('-o', '--output', type=str, required=True,
+                        help="Output trajectory file (.xtc); the extension is added if omitted.")
     
     parser.add_argument('-ts', '--time-step', type=float, default = 0.1,
-                        help="Time step of the gsd file in ns, default is 0.1 ns")
+                        help="Time between consecutive GSD frames, in ns.")
     
     args = parser.parse_args(argv)
 

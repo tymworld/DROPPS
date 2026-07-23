@@ -1,7 +1,7 @@
 # genmesh tool in dps package by Yiming Tang @ Fudan
 # Development started on June 6 2025
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 import random
 import numpy as np
 import itertools
@@ -253,41 +253,41 @@ def genmesh(args):
     output_topology_file.close()
 
 prog = "genmesh"
-desc = '''This program generate mesh for a given set of molecules.'''
+desc = "Pack one or more molecule types onto a three-dimensional simulation-box mesh."
 
 def getargs_genmesh(argv):
 
     parser = ArgumentParser(prog=prog, description=desc)
 
     parser.add_argument('-f', '--structure', nargs='+', type=str, required=True, 
-                        help="PDB files which are taken as input. Allow multiple file.")
+                        help="Input structure files (.pdb), one per molecule type.")
     parser.add_argument('-p', '--topology', nargs='+', type=str, required=True, 
-                        help="ITP files which are taken as input. Allow multiple file (one for each pdb file).")
+                        help="Input topology files (.itp), in the same order as --structure.")
     parser.add_argument('-n', '--number', type=int, nargs='+', required=True,
-                        help="Number of molecules to add. Allow multiple input (one number for each pdb file).")
+                        help="Molecule counts, one integer for each input structure.")
     parser.add_argument('-g', '--gap', type=float, default=1,
-                        help="Minimum distance between each two molecules.")
+                        help="Minimum gap between neighboring molecules, in nm.")
     parser.add_argument('-mesh', '--mesh', type=int, nargs=3, 
-                        help="Three integers representing the size of the mesh in x/y/z direction. If not specified, mesh will be guessed.")
+                        help="Mesh dimensions NX NY NZ; if omitted, choose a cubic mesh automatically.")
     #parser.add_argument('-gmesh', '--guess-mesh', type=bool, default=False,
     #                    help="Whether let the program guess the size of the mesh in x/y/z direction.")
     parser.add_argument('-bt', '--box-type', type=str, choices=["xy", "cubic", "anosotropy"], default="anosotropy",
-                        help="The type of the size of box.")
-    parser.add_argument('-mx', '--minimum-x', type=float, help="Minimum length of the box in the x direction. Zero is as small as posible.", default=0)
-    parser.add_argument('-my', '--minimum-y', type=float, help="Minimum length of the box in the y direction. Zero is as small as posible.", default=0)
-    parser.add_argument('-mz', '--minimum-z', type=float, help="Minimum length of the box in the z direction. Zero is as small as posible.", default=0)
+                        help="Legacy box-shape selector retained for command compatibility.")
+    parser.add_argument('-mx', '--minimum-x', type=float, help="Minimum box length along x, in nm; zero selects the smallest fitted length.", default=0)
+    parser.add_argument('-my', '--minimum-y', type=float, help="Minimum box length along y, in nm; zero selects the smallest fitted length.", default=0)
+    parser.add_argument('-mz', '--minimum-z', type=float, help="Minimum box length along z, in nm; zero selects the smallest fitted length.", default=0)
     parser.add_argument('-s', '--shuffle', action='store_true', default=False, 
-                        help="Whether the molecules to input are shuffled before insertion.")
+                        help="Shuffle molecule types before inserting them on the mesh.")
     
     parser.add_argument('-ncm', '--non-cubic-molecule', action='store_true', default=False, 
-                        help="Whether not to force the input molecules to be cubic before insertion.")
+                        help="Use separate molecular extents along x, y, and z instead of one cubic extent.")
 
-    parser.add_argument('-oc', '--output-conformation', type=str, help="File prefix to write output configuration",
-                        default="system.pdb",
-                        required=True)
-    parser.add_argument('-op', '--output-topology', type=str, help="File prefix to write output configuration",
-                        default="system.top",
-                        required=True)
+    parser.add_argument('-oc', '--output-conformation', type=str,
+                        help="Output packed structure file (.pdb); the extension is added if omitted.",
+                        default="system.pdb")
+    parser.add_argument('-op', '--output-topology', type=str,
+                        help="Output system topology file (.top); the extension is added if omitted.",
+                        default="system.top")
 
     args = parser.parse_args(argv)
     

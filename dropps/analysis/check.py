@@ -1,23 +1,23 @@
 # check tool in DROPPS package by Yiming Tang @ Fudan
 # Development started on July 17 2025
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 from dropps.share.trajectory import trajectory_class
 from dropps.fileio.tpr_reader import read_tpr
 
 prog = "check"
-desc = '''This program check tpr, xtc, and ndx files for data analysis.'''
+desc = "Inspect DROPPS run, trajectory, and index files before analysis."
 
 def getargs_check(argv):
 
     parser = ArgumentParser(prog=prog, description=desc)
 
     parser.add_argument('-s', '--run-input', type=str, required=True, 
-                        help="TPR file containing all information for a simulation run.")
+                        help="Input DROPPS run file (.tpr) containing the system and simulation settings.")
     parser.add_argument('-f', '--trajectory', type=str, required=False, 
-                        help="XTC file containing trajectory for a simulation run.")
+                        help="Optional input trajectory file (.xtc).")
     parser.add_argument('-n', '--index', type=str, required=False,
-                        help="Load existing index file from this file.")
+                        help="Optional index file (.ndx) defining additional atom groups.")
 
     args = parser.parse_args(argv)
     return args
@@ -50,4 +50,3 @@ def check(args):
 
 from dropps.share.command_class import single_command
 check_commands = single_command("check", getargs_check, check, desc)
-

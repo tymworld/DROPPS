@@ -1,7 +1,7 @@
 # generate elestic (genelestic) tool in CGPS.ng package by Yiming Tang @ Fudan
 # Development started on June 8 2025
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
 from copy import deepcopy
 import numpy as np
 
@@ -43,7 +43,7 @@ def genelastic(args):
     try:
         elastic_cluster_list = [[int(number) - 1 for number in line.strip().split()] for line in open(args.elastic_residues, 'r') if len(line) > 1]
     except Exception as exc:
-        print("## An exception occurred when trying to open angle file %s." % args.angle_list)
+        print("## An exception occurred when trying to open elastic-residue file %s." % args.elastic_residues)
         print(f"## Root cause: {exc}")
         quit()
 
@@ -93,36 +93,35 @@ def genelastic(args):
     write_itp(output_file_name, topology)
 
 prog = "genelastic"
-desc = '''This program generate elastic network for an itp file.'''
+desc = "Add a distance-based elastic network to an ITP topology."
 
 def getargs_genelastic(argv):
 
     parser = ArgumentParser(prog=prog, description=desc)
 
     parser.add_argument('-f', '--structure', type=str, required=True, 
-                        help="PDB file which is taken as input for structure.")
+                        help="Input reference structure file (.pdb).")
 
     parser.add_argument('-p', '--topology', type=str, required=True, 
-                        help="ITP file which is taken as input for topology.")
+                        help="Input topology file (.itp).")
 
     parser.add_argument('-o', '--output', type=str, required=True, 
-                        help="ITP file which to write topology with elastic network added.")
+                        help="Output topology file (.itp); the extension is added if omitted.")
 
     parser.add_argument('-er', '--elastic-residues', type=str, required=True,
-                        help="ASCII File each line of which contains group of bead on which elastic network will be added. Start with 1.")
+                        help="Input text file listing one elastic-network bead group per line, using 1-based bead indices.")
 
     parser.add_argument('-ef', '--elastic-force-constant', type=float, default=5000,
-                        help="Elastic bond force constant Fc, default: 5000")
+                        help="Elastic-bond force constant, in kJ mol^-1 nm^-2.")
 
     parser.add_argument('-el', '--elastic-lower', type=float, default=0.5,
-                        help="Elastic bond lower cutoff: F = Fc if rij < lo, default: 0.5")
+                        help="Lower distance cutoff for elastic bonds, in nm.")
 
     parser.add_argument('-eu', '--elastic-upper', type=float, default=0.9,
-                        help="Elastic bond upper cutoff: F = 0  if rij > up, default: 0.9")
+                        help="Upper distance cutoff for elastic bonds, in nm.")
 
     args = parser.parse_args(argv)
     return args
 
 from dropps.share.command_class import single_command
 genelastic_commands = single_command("genelastic", getargs_genelastic, genelastic, desc)
-
