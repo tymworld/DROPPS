@@ -28,6 +28,10 @@ def getargs_gsd2xtc(argv):
     
     parser.add_argument('-ts', '--time-step', type=float, default = 0.1,
                         help="Time between consecutive GSD frames, in ns.")
+
+    parser.add_argument('-box', '--box', type=float, nargs=3,
+                        metavar=('X', 'Y', 'Z'),
+                        help="Box lengths in nm; required when the GSD file has no periodic box.")
     
     args = parser.parse_args(argv)
 
@@ -37,10 +41,15 @@ def gsd2xtc(args):
 
     u = mda.Universe(args.input)
 
-    if np.all(u.dimensions == 0):
-        print("Warning: No PBC detected. Setting default PBC dimensions.")
-        # You can define your box dimensions if necessary, e.g., cubic box
-        u.dimensions = np.array([u.dimensions[0], u.dimensions[0], u.dimensions[0], 90.0, 90.0, 90.0])  # Box in nm
+    box_override = None
+    if args.box is not None:
+        if any(length <= 0 for length in args.box):
+            raise ValueError("All box lengths must be positive.")
+        box_override = np.array([*args.box, 90.0, 90.0, 90.0])
+    elif np.all(u.dimensions[:3] == 0):
+        raise ValueError(
+            "The GSD trajectory has no periodic box. Supply box lengths with --box X Y Z."
+        )
 
     output_filename = validate_extension(args.output, "xtc")
 
@@ -54,6 +63,13 @@ def gsd2xtc(args):
         for i, ts in tqdm(enumerate(u.trajectory)):
             # Multiply the coordinates by the factor
             ts.positions *= factor
+
+            if box_override is not None:
+                ts.dimensions = box_override
+            elif np.all(ts.dimensions[:3] == 0):
+                raise ValueError(
+                    f"GSD frame {i} has no periodic box. Supply box lengths with --box X Y Z."
+                )
             
             # Multiply the box vectors by the factor
             ts.dimensions = [ts.dimensions[0]*10.0, ts.dimensions[1]*10.0, ts.dimensions[2]*10.0,

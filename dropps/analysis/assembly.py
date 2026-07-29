@@ -210,7 +210,7 @@ def assembly(args):
     # We treat time for analysis and generate frame for analysis
 
     start_frame, end_frame, interval_frame = trajectory.time2frame(args.start_time, args.end_time, args.delta_time)
-    frame_list = list(range(start_frame, end_frame, interval_frame))
+    frame_list = list(range(start_frame, end_frame + 1, interval_frame))
 
     # We treat groups
     
@@ -224,7 +224,8 @@ def assembly(args):
         reference_group, reference_group_name = trajectory.getSelection_interactive("reference group for cluster determination")
 
     if args.selection_group is not None:
-        print(f"## Will use groups {','.join([f"{i}" for i in args.selection_group])} to print composition of clusters.")
+        selection_group_ids = ",".join(str(i) for i in args.selection_group)
+        print(f"## Will use groups {selection_group_ids} to print composition of clusters.")
         selection_groups = [trajectory.getSelection(f"group {gid}")[0] for gid in args.selection_group]
         selection_group_names = [f"group{i}" for i in args.selection_group]
     else:
@@ -284,7 +285,7 @@ def assembly(args):
     asphericity_list = list()
     ellipticity_list = list()
 
-    for ts in tqdm(trajectory.Universe.trajectory[start_frame:end_frame:interval_frame]):
+    for ts in tqdm(trajectory.Universe.trajectory[start_frame:end_frame + 1:interval_frame]):
 
         time_list.append(trajectory.Universe.trajectory.time / 1000)
 

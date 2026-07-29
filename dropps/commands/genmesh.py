@@ -170,8 +170,8 @@ def genmesh(args):
                 chain_ID.append(labels[0])
                 residue_sequence_number.append(resindex + 1)
                 x_nm.append(atom["x"].value_in_unit(nanometer) + mesh_center[0] + box_size[0] / 2) * nanometer    
-                y_nm.append(atom["y"].value_in_unit(nanometer) + mesh_center[1] + box_size[0] / 2) * nanometer
-                z_nm.append(atom["z"].value_in_unit(nanometer) + mesh_center[2] + box_size[0] / 2)   * nanometer 
+                y_nm.append(atom["y"].value_in_unit(nanometer) + mesh_center[1] + box_size[1] / 2) * nanometer
+                z_nm.append(atom["z"].value_in_unit(nanometer) + mesh_center[2] + box_size[2] / 2) * nanometer
                 occupancy.append(1)
                 b_factor.append(0)
                 element_symbol.append(atom["element"])   

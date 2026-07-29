@@ -93,7 +93,8 @@ def gyrate(args):
     start_frame, end_frame, interval_frame = trajectory.time2frame(args.start_time, args.end_time, args.delta_time)
 
     if args.selection_calculate is not None:
-        print(f"## Will use groups {','.join([f"{i}" for i in args.selection_calculate])} for Rg calculations.")
+        group_ids = ",".join(str(i) for i in args.selection_calculate)
+        print(f"## Will use groups {group_ids} for Rg calculations.")
         selections = [trajectory.getSelection(f"group {gid}")[0] for gid in args.selection_calculate]
         selection_names = [f"group{i}" for i in args.selection_calculate]
     else:
@@ -109,7 +110,7 @@ def gyrate(args):
     print(f"## Will calculate radius of gyration for {len(selections)} groups.")
     print(f"## Start of radius of gyration calculations.")
 
-    for ts in tqdm(trajectory.Universe.trajectory[start_frame:end_frame:interval_frame]):
+    for ts in tqdm(trajectory.Universe.trajectory[start_frame:end_frame + 1:interval_frame]):
 
         time_list.append(trajectory.Universe.trajectory.time / 1000)
         for selection_id, selection in enumerate(selections):

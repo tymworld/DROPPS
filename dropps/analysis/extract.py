@@ -84,7 +84,11 @@ def extract(args):
     else:
         start_frame, end_frame, center_interval_frame = trajectory.time2frame(args.time, args.time, 0)
 
-    
+    if args.pbc == "mol":
+        trajectory.Universe.trajectory.add_transformations(
+            unwrap(trajectory.Universe.atoms)
+        )
+
     ts = trajectory.Universe.trajectory[start_frame]
     coordinates = trajectory.Universe.atoms.positions
     box_size = trajectory.Universe.dimensions[0:3] / 10.0
@@ -98,13 +102,12 @@ def extract(args):
         print(f"## Will use frame {start_frame} to {end_frame} with recentering interval of {center_interval_frame}.")
         print(f"## Will center dense phase along {args.center}-axis.")
     
-        if args.selection_fit is None:
+        if args.selection_fit is not None:
+            print(f"## Will use group {args.selection_fit} for dense phase determination.")
+            fit_group, fit_group_name = trajectory.getSelection(f"group {args.selection_fit}")
+        else:
             trajectory.index.print_all()
-            if args.selection_fit is not None:
-                print(f"## Will use group {args.selection_fit} for dense phase determination.")
-                fit_group, fit_group_name = trajectory.getSelection(f"group {args.selection_fit}")
-            else:
-                fit_group, fit_group_name = trajectory.getSelection_interactive("group for dense phase determination")
+            fit_group, fit_group_name = trajectory.getSelection_interactive("group for dense phase determination")
         
         mass_density_for_center_analyzer = lin.LinearDensity(fit_group, grouping='atoms', binsize=0.5).run(start=start_frame, stop=end_frame+1 )
         axis = getattr(args, "axis", args.center)
@@ -170,7 +173,7 @@ def extract(args):
     # Centering ended here
 
     if args.pbc == "mol":
-        print(f"## Molecules will be made whole.")
+        print(f"## Molecules were made whole before extracting the frame.")
     elif args.pbc == "atom":
         print(f"## Atoms will be put inside the simulation box.")
         def apply_pbc(coords, box_size):

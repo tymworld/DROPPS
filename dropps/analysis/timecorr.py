@@ -381,7 +381,7 @@ def timecorr(args):
     print(f"## Neighborhood search will be performed with cutoff {cutoff / 10.0} nm.")
     print(f"## Processing frames from {start_frame} to {end_frame} with interval {interval_frame}.")
 
-    for ts in tqdm(trajectory.Universe.trajectory[start_frame:end_frame:interval_frame]):
+    for ts in tqdm(trajectory.Universe.trajectory[start_frame:end_frame + 1:interval_frame]):
         time_list.append(ts.time / 1000.0)
 
         pos = search_atoms.positions

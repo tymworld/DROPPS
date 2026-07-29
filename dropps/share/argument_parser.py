@@ -12,7 +12,7 @@ class HelpFormatter(
     argparse.ArgumentDefaultsHelpFormatter,
     argparse.RawDescriptionHelpFormatter,
 ):
-    """Preserve formatted descriptions and show non-``None`` defaults."""
+    """Preserve descriptions and label defaults and required options."""
 
     _DOCUMENTED_DEFAULT = re.compile(
         r"\b(?:by\s+default|defaults?\s+to|default\s*:|default\s+is\b|the\s+default)",
@@ -21,11 +21,17 @@ class HelpFormatter(
 
     def _get_help_string(self, action: argparse.Action) -> str:
         help_text = action.help or ""
+
+        if getattr(action, "_dropps_required_group", False):
+            return help_text + " (required: choose one option from this group)"
+
+        if getattr(action, "required", False):
+            return help_text + " (required)"
+
         if (
             "%(default)" not in help_text
             and self._DOCUMENTED_DEFAULT.search(help_text) is None
             and action.default is not argparse.SUPPRESS
-            and action.default is not None
         ):
             help_text += " (default: %(default)s)"
         return help_text
@@ -168,3 +174,14 @@ class ArgumentParser(argparse.ArgumentParser):
             "parameters": self._parameter_options,
         }[section]
         return group.add_mutually_exclusive_group(**kwargs)
+
+    def format_help(self) -> str:
+        """Mark required mutually exclusive choices before formatting help."""
+
+        containers = [self, *self._action_groups]
+        for container in containers:
+            for group in container._mutually_exclusive_groups:
+                required_group = bool(group.required)
+                for action in group._group_actions:
+                    action._dropps_required_group = required_group
+        return super().format_help()

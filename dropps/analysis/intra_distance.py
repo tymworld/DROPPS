@@ -84,12 +84,13 @@ def intra_distance(args):
 
     start_frame, end_frame, interval_frame = trajectory.time2frame(args.start_time, args.end_time, args.delta_time)
 
-    frame_list = list(range(start_frame, end_frame, interval_frame))
+    frame_list = list(range(start_frame, end_frame + 1, interval_frame))
 
     # We now generate atom groups for calculations
 
     if args.selection is not None:
-        print(f"## Will use groups {','.join([f"{i}" for i in args.selection])} for distance calculations.")
+        group_ids = ",".join(str(i) for i in args.selection)
+        print(f"## Will use groups {group_ids} for distance calculations.")
         groups = [trajectory.getSelection(f"group {gid}")[0] for gid in args.selection]
         groups_names = [f"group{i}" for i in args.selection]
     else:

@@ -97,9 +97,9 @@ class ITPTopology():
             self.atomtypes = [Atomtype_WF_DH(singletype["abbr"], singletype["name"])
                 for singletype in data["atomtypes"]]
             
-            self.types2sigma = {f"{nonbonded["atom_abbr_1"]}-{nonbonded["atom_abbr_2"]}": nonbonded["sigma"] for nonbonded in data["nonbond_params"]}
-            self.types2mu = {f"{nonbonded["atom_abbr_1"]}-{nonbonded["atom_abbr_2"]}": nonbonded["mu"] for nonbonded in data["nonbond_params"]}
-            self.types2epsilon = {f"{nonbonded["atom_abbr_1"]}-{nonbonded["atom_abbr_2"]}": nonbonded["epsilon"] for nonbonded in data["nonbond_params"]}
+            self.types2sigma = {f"{nonbonded['atom_abbr_1']}-{nonbonded['atom_abbr_2']}": nonbonded["sigma"] for nonbonded in data["nonbond_params"]}
+            self.types2mu = {f"{nonbonded['atom_abbr_1']}-{nonbonded['atom_abbr_2']}": nonbonded["mu"] for nonbonded in data["nonbond_params"]}
+            self.types2epsilon = {f"{nonbonded['atom_abbr_1']}-{nonbonded['atom_abbr_2']}": nonbonded["epsilon"] for nonbonded in data["nonbond_params"]}
 
             # We test 
             for abbr1 in self.typelist:
@@ -157,8 +157,8 @@ def read_itp(file_path):
     current_section = None
 
     for line in lines:
-        line = line.strip().split('#')[0]
-        if not line or line.startswith(';'):
+        line = line.split(';')[0].split('#')[0].strip()
+        if not line:
             continue
         if line.startswith('[') and line.endswith(']'):
             current_section = line.strip('[]').strip().lower().replace("-", "_") 
@@ -169,8 +169,13 @@ def read_itp(file_path):
 
     # Parse function type
     if "function_type" in sections:
-        parsed_data["function_type_LJ"] = sections["function_type"][0].strip().split()[0]
-        parsed_data["function_type_Coulomb"] = sections["function_type"][0].strip().split()[1]
+        function_types = sections["function_type"][0].strip().split()
+        if len(function_types) < 2:
+            raise ValueError(
+                f"Malformed [ function-type ] section in {file_path}: expected two values."
+            )
+        parsed_data["function_type_LJ"] = function_types[0]
+        parsed_data["function_type_Coulomb"] = function_types[1]
     else:
         print(f"ERROR: The itp file {file_path} may not include function type. ")
         print(f"       You maybe using a new DROPPS version with an old itp file.")
@@ -244,6 +249,12 @@ def read_itp(file_path):
 
     if "moleculetype" in sections and sections["moleculetype"]:
         parsed_data["moleculetype"] = sections["moleculetype"][0].split()
+        if len(parsed_data["moleculetype"]) < 2:
+            raise ValueError(
+                f"Malformed [ moleculetype ] section in {file_path}: expected name and nrexcl."
+            )
+    else:
+        raise ValueError(f"Missing [ moleculetype ] section in {file_path}.")
     
     if parsed_data["function_type_LJ"] == "Ashbaugh-Hatch" and parsed_data["function_type_Coulomb"] == "Debye-Huckel":
         if "nonbond_global" not in sections or len(sections["nonbond_global"]) == 0:
@@ -260,16 +271,19 @@ def read_itp(file_path):
             parsed_data["atomtypes"] = []
             for line in sections["atomtypes"]:
                 parts = re.split(r'\s+', line)
-                if len(parts) >= 4:
-                    parsed_data["atomtypes"].append({
-                        "abbr": parts[0],
-                        "name": parts[1],
-                        "sigma": float(parts[2]),
-                        "lambda": float(parts[3]),
-                        "T0": float(parts[4]),
-                        "T1": float(parts[5]),
-                        "T2": float(parts[6])
-                    })
+                if len(parts) < 7:
+                    raise ValueError(
+                        f"Malformed [ atomtypes ] line in {file_path}: '{line}'."
+                    )
+                parsed_data["atomtypes"].append({
+                    "abbr": parts[0],
+                    "name": parts[1],
+                    "sigma": float(parts[2]),
+                    "lambda": float(parts[3]),
+                    "T0": float(parts[4]),
+                    "T1": float(parts[5]),
+                    "T2": float(parts[6])
+                })
 
     elif parsed_data["function_type_LJ"] == "Wang-Frenkel" and parsed_data["function_type_Coulomb"] == "Debye-Huckel":
         
@@ -278,11 +292,14 @@ def read_itp(file_path):
             parsed_data["atomtypes"] = []
             for line in sections["atomtypes"]:
                 parts = re.split(r'\s+', line)
-                if len(parts) >= 1:
-                    parsed_data["atomtypes"].append({
-                        "abbr": parts[0],
-                        "name": parts[1]
-                    })
+                if len(parts) < 2:
+                    raise ValueError(
+                        f"Malformed [ atomtypes ] line in {file_path}: '{line}'."
+                    )
+                parsed_data["atomtypes"].append({
+                    "abbr": parts[0],
+                    "name": parts[1]
+                })
         
         if "nonbond_params" in sections:
             parsed_data["nonbond_params"] = []
@@ -304,49 +321,55 @@ def read_itp(file_path):
     if "atoms" in sections:
         parsed_data["atoms"] = []
         for line in sections["atoms"]:
-            line = line.split(";")[0].strip()
             parts = re.split(r'\s+', line)
-            if len(parts) >= 6:
-                parsed_data["atoms"].append({
-                    "id": int(parts[0]),
-                    "abbr": parts[1],
-                    "name": parts[2],
-                    "residue": parts[3],
-                    "residueid": parts[4],
-                    "mass": float(parts[5]),
-                    "charge": float(parts[6])
-                })
+            if len(parts) < 7:
+                raise ValueError(
+                    f"Malformed [ atoms ] line in {file_path}: '{line}'."
+                )
+            parsed_data["atoms"].append({
+                "id": int(parts[0]),
+                "abbr": parts[1],
+                "name": parts[2],
+                "residue": parts[3],
+                "residueid": parts[4],
+                "mass": float(parts[5]),
+                "charge": float(parts[6])
+            })
 
     # Parse bonds
     if "bonds" in sections:
         parsed_data["bonds"] = []
         for line in sections["bonds"]:
-            line = line.split(";")[0].strip()
             parts = re.split(r'\s+', line)
-            if len(parts) >= 4:
-                bond_info = {
-                    "i": int(parts[0]),
-                    "j": int(parts[1]),
-                    "length": float(parts[2]) * nanometer,
-                    "force": float(parts[3]) * kilojoule_per_mole / nanometer ** 2
-                }
-                parsed_data["bonds"].append(bond_info)
+            if len(parts) < 4:
+                raise ValueError(
+                    f"Malformed [ bonds ] line in {file_path}: '{line}'."
+                )
+            bond_info = {
+                "i": int(parts[0]),
+                "j": int(parts[1]),
+                "length": float(parts[2]) * nanometer,
+                "force": float(parts[3]) * kilojoule_per_mole / nanometer ** 2
+            }
+            parsed_data["bonds"].append(bond_info)
 
     # Parse angles
     if "angles" in sections:
         parsed_data["angles"] = []
         for line in sections["angles"]:
-            line = line.split(";")[0].strip()
             parts = re.split(r'\s+', line)
-            if len(parts) >= 4:
-                angle_info = {
-                    "i": int(parts[0]),
-                    "j": int(parts[1]),
-                    "k": int(parts[2]),
-                    "theta_in_degree": float(parts[3]) * degree,
-                    "force": float(parts[4]) * kilojoule_per_mole / radian ** 2
-                }
-                parsed_data["angles"].append(angle_info)
+            if len(parts) < 5:
+                raise ValueError(
+                    f"Malformed [ angles ] line in {file_path}: '{line}'."
+                )
+            angle_info = {
+                "i": int(parts[0]),
+                "j": int(parts[1]),
+                "k": int(parts[2]),
+                "theta_in_degree": float(parts[3]) * degree,
+                "force": float(parts[4]) * kilojoule_per_mole / radian ** 2
+            }
+            parsed_data["angles"].append(angle_info)
 
     return ITPTopology(parsed_data)
 
@@ -359,7 +382,7 @@ def write_itp(file_path, topology:ITPTopology):
         # Write forcefield and information lines
         print(f"## The molecule will be named as {topology.molecule_name} in topology file.")
         itp_file.write(f"[ moleculetype ]\n; molname  nrexcl\n")
-        itp_file.write(f"{topology.molecule_name}     1\n\n")
+        itp_file.write(f"{topology.molecule_name}     {topology.nrexcl}\n\n")
 
         # Write function type
         itp_file.write(f"[ function-type ]\n")

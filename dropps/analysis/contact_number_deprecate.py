@@ -89,22 +89,20 @@ def contact_number(args):
 
     start_frame, end_frame, interval_frame = trajectory.time2frame(args.start_time, args.end_time, args.delta_time)
 
-    frame_list = list(range(start_frame, end_frame, interval_frame))
+    frame_list = list(range(start_frame, end_frame + 1, interval_frame))
 
     # We now generate atom groups for calculations
 
     if args.reference is not None:
         print(f"## Will use group {args.reference} to calculate contact from.")
-        reference = trajectory.getSelection(f"group {args.reference}")
-        reference_name = f"group{args.reference}"
+        reference, reference_name = trajectory.getSelection(f"group {args.reference}")
     else:
         trajectory.index.print_all()
         reference, reference_name = trajectory.getSelection_interactive("contact from this group")
     
     if args.selection is not None:
         print(f"## Will use group {args.selection} to calculate contact to.")
-        selection = trajectory.getSelection(f"group {args.selection}")
-        selection_name = f"group{args.selection}"
+        selection, selection_name = trajectory.getSelection(f"group {args.selection}")
     else:
         trajectory.index.print_all()
         selection, selection_name = trajectory.getSelection_interactive("contact to this group")
@@ -112,7 +110,7 @@ def contact_number(args):
     c1 = reference.indices
     c2 = selection.indices
 
-    if np.array_equal(c1, c2) and np.intersect1d(c1, c2).size > 0:
+    if not np.array_equal(c1, c2) and np.intersect1d(c1, c2).size > 0:
         print(f"ERROR: Reference and selection groups are overlapping but not identical. Please check.")
         quit()
     
@@ -231,5 +229,3 @@ def contact_number(args):
 
 from dropps.share.command_class import single_command
 contact_number_commands = single_command("contact", getargs_contact_number, contact_number, desc)
-
-

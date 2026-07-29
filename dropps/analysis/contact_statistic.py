@@ -284,13 +284,15 @@ def contact_statistic(args):
     # We now write output to excel file with index
     try:
         import pandas as pd
+        output_path = validate_extension(args.output, "xlsx")
         df = pd.DataFrame(contact_matrix, 
                           index= [f"{reference_group_name}_{restype}" for restype in residue_type_abbr], 
                           columns=[f"{selection_group_name}_{restype}" for restype in residue_type_abbr])
-        df.to_excel(validate_extension(args.output,"xlsx"), float_format="%.6f")
-        print(f"## Contact statistic written to {validate_extension(args.output,"xlsx")}.")
+        df.to_excel(output_path, float_format="%.6f")
+        print(f"## Contact statistic written to {output_path}.")
     except Exception as e:
-        raise RuntimeError(f"Failed to write output to {validate_extension(args.output,"xlsx")}: {e}")
+        output_path = validate_extension(args.output, "xlsx")
+        raise RuntimeError(f"Failed to write output to {output_path}: {e}")
     
 
 from dropps.share.command_class import single_command

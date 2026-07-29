@@ -1,6 +1,6 @@
 package_name = "DROPPS"
 package_abbr = "DPS"
-package_version = "0.4.0"
+package_version = "0.4.1"
 
 from sys import executable
 from os import path, getcwd
@@ -30,4 +30,3 @@ def print_hello(entry, cmd):
     title += f"DROPPS reminds you: \"Once there is a smart boy who loves publishing his papers in Nature.\"\n"
 
     print(title)
-

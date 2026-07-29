@@ -17,6 +17,7 @@ from dropps.share.stress_tensor_reporter import (
     kinetic_pressure_tensor,
     pressure_tensor,
 )
+from dropps.share.energy_reporter import EnergyReporter, read_edr
 from dropps.commands.mdrun import mdrun
 
 
@@ -95,6 +96,44 @@ class StressTensorCoreTests(unittest.TestCase):
 
 
 class StressTensorReporterTests(unittest.TestCase):
+    def test_energy_reporter_can_store_selected_pressure_terms(self):
+        system, _box = harmonic_bond_system()
+        positions = np.asarray([[1.0, 1.0, 1.0], [1.6, 1.8, 1.0]])
+        velocities = np.asarray([[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]])
+        main_integrator = openmm.VerletIntegrator(0.001 * unit.picoseconds)
+        context = openmm.Context(
+            system,
+            main_integrator,
+            openmm.Platform.getPlatformByName("Reference"),
+        )
+        context.setPositions(positions * unit.nanometer)
+        context.setVelocities(velocities * unit.nanometer / unit.picosecond)
+        simulation = SimpleNamespace(system=system, currentStep=10)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output = Path(temporary_directory) / "run.edr"
+            reporter = EnergyReporter(
+                output,
+                report_interval=10,
+                fields=("pressure", "Pxx", "Pxy"),
+                stress_strain=1.0e-5,
+                stress_platform="Reference",
+            )
+            try:
+                state = context.getState(
+                    getPositions=True, getVelocities=True, getEnergy=True
+                )
+                reporter.report(simulation, state)
+            finally:
+                reporter.close()
+                del context
+                del main_integrator
+
+            data = read_edr(output)
+            self.assertEqual(data.header.fields, ("pressure", "Pxx", "Pxy"))
+            self.assertEqual(data.steps.tolist(), [10])
+            self.assertTrue(np.all(np.isfinite(data.values["Pxx"])))
+
     def test_reporter_streams_nine_numeric_columns(self):
         system, box = harmonic_bond_system()
         positions = np.asarray([[1.0, 1.0, 1.0], [1.6, 1.8, 1.0]])

@@ -1,7 +1,7 @@
 [project]
 name = "dropps"
-version = "0.4.1"
-description = "Distributed Rapid Operation Platform for Phase-separation Simulations"
+version = "0.4.2"
+description = "Distributed Rapid Operation Platform for Phase-separation Simulations. Last supported version of OpenMM 8.1"
 authors = [
     {name = "Yiming Tang",email = "ymtang@fudan.edu.cn"}
 ]
@@ -23,3 +23,13 @@ build-backend = "poetry.core.masonry.api"
 
 [project.scripts]
 dps = "dropps.dps:main"
+
+[tool.poetry]
+exclude = [
+    "**/.DS_Store",
+    "**/._*",
+    "**/@eaDir/**",
+    "**/__pycache__/**",
+    "**/*.pyc",
+    "dropps/backups/**",
+]

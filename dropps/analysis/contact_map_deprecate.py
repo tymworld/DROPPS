@@ -252,7 +252,7 @@ def contactmap(args):
 
     start_frame, end_frame, interval_frame = trajectory.time2frame(args.start_time, args.end_time, args.delta_time)
 
-    frame_list = list(range(start_frame, end_frame, interval_frame))
+    frame_list = list(range(start_frame, end_frame + 1, interval_frame))
 
     # We now generate atom groups for calculations
 

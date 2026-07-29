@@ -89,13 +89,13 @@ class trajectory_class():
         print(f"## {self.Universe.trajectory[0]}")
     
     def get_chainID(self, index):
-        if index < 0 or index > self.num_atoms():
+        if index < 0 or index >= self.num_atoms():
             print(f"ERROR: System of {self.num_atoms()} atoms doesn't contains atom index {index}.")
             quit()
         return self.id2chainID[index]
     
     def get_resID(self, index):
-        if index < 0 or index > self.num_atoms():
+        if index < 0 or index >= self.num_atoms():
             print(f"ERROR: System of {self.num_atoms()} atoms doesn't contains atom index {index}.")
             quit()
         return self.id2resID[index]
@@ -143,6 +143,11 @@ class trajectory_class():
                 + f"while you demanding {start_time} - {end_time}.")
             print(f"YOU MUST BE KIDDING ME.")
             quit()
+
+        if end_time < start_time:
+            raise ValueError(
+                f"End time {end_time} must not be earlier than start time {start_time}."
+            )
 
         start_frame = int((start_time - self.time_init()) / self.time_step())
         end_frame = int((end_time - self.time_init()) / self.time_step())
@@ -194,7 +199,6 @@ class trajectory_class():
 
     
         
-
 
 
 

@@ -1,4 +1,5 @@
 import pickle
+import shutil
 import tempfile
 import unittest
 from copy import deepcopy
@@ -12,6 +13,7 @@ from MDAnalysis.lib.formats.libmdaxdr import XTCFile
 
 from dropps.commands.mdrun import getargs_mdrun, mdrun
 from dropps.share.parameters import parameters_dict_template
+from dropps.share.energy_reporter import read_edr
 
 
 def _runtime(nsteps, checkpoint_interval):
@@ -50,7 +52,8 @@ def _runtime(nsteps, checkpoint_interval):
             "nst_cp": checkpoint_interval,
             "nst_screenlog": 0,
             "nst_filelog": 1,
-            "filelog_grps": "step,potentialEnergy",
+            "nst_energy": 1,
+            "energy_grps": "potentialEnergy,temperature,boxX,boxY,boxZ,volume",
             "nst_stress": 0,
         }
     )
@@ -97,6 +100,8 @@ class MdrunResumeTests(unittest.TestCase):
                     checkpoint=None,
                 )
             )
+            retained_checkpoint = directory / "step-2.chk"
+            shutil.copyfile(f"{output_prefix}.chk", retained_checkpoint)
 
             # Advance outputs to step 3 while deliberately retaining the step-2
             # checkpoint, as can happen after an ungraceful process exit.
@@ -109,6 +114,7 @@ class MdrunResumeTests(unittest.TestCase):
                     checkpoint="auto",
                 )
             )
+            shutil.copyfile(retained_checkpoint, f"{output_prefix}.chk")
 
             with run_input.open("wb") as handle:
                 pickle.dump(_runtime(nsteps=4, checkpoint_interval=1), handle)
@@ -135,6 +141,84 @@ class MdrunResumeTests(unittest.TestCase):
                 except ValueError:
                     pass
             self.assertEqual(logged_steps, [1, 2, 3, 4])
+
+            energy_data = read_edr(f"{output_prefix}.edr")
+            np.testing.assert_array_equal(energy_data.steps, [1, 2, 3, 4])
+            self.assertEqual(
+                energy_data.header.fields,
+                (
+                    "potentialEnergy",
+                    "temperature",
+                    "boxX",
+                    "boxY",
+                    "boxZ",
+                    "volume",
+                ),
+            )
+            np.testing.assert_allclose(energy_data.values["volume"], 64.0)
+
+    def test_noappend_writes_part_files_and_keeps_latest_checkpoint_name(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            run_input = directory / "run.tpr"
+            output_prefix = directory / "run"
+
+            with run_input.open("wb") as handle:
+                pickle.dump(_runtime(nsteps=1, checkpoint_interval=0), handle)
+            mdrun(
+                SimpleNamespace(
+                    run_input=str(run_input),
+                    output_prefix=str(output_prefix),
+                    checkpoint=None,
+                )
+            )
+
+            with run_input.open("wb") as handle:
+                pickle.dump(_runtime(nsteps=2, checkpoint_interval=0), handle)
+            mdrun(
+                SimpleNamespace(
+                    run_input=str(run_input),
+                    output_prefix=str(output_prefix),
+                    checkpoint="auto",
+                    append=False,
+                )
+            )
+
+            with XTCFile(f"{output_prefix}.xtc", "r") as trajectory:
+                base_steps = [frame.step for frame in trajectory]
+            with XTCFile(
+                f"{output_prefix}.part0002.xtc", "r"
+            ) as trajectory:
+                continuation_steps = [frame.step for frame in trajectory]
+
+            self.assertEqual(base_steps, [0, 1])
+            self.assertEqual(continuation_steps, [1, 2])
+            self.assertTrue(Path(f"{output_prefix}.part0002.log").is_file())
+            self.assertTrue(Path(f"{output_prefix}.part0002.edr").is_file())
+            self.assertTrue(Path(f"{output_prefix}.part0002.pdb").is_file())
+            self.assertTrue(Path(f"{output_prefix}.chk").is_file())
+            self.assertFalse(Path(f"{output_prefix}.part0002.chk").exists())
+
+    def test_nsteps_command_line_override_changes_production_target(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            run_input = directory / "run.tpr"
+            output_prefix = directory / "run"
+            with run_input.open("wb") as handle:
+                pickle.dump(_runtime(nsteps=3, checkpoint_interval=0), handle)
+
+            mdrun(
+                SimpleNamespace(
+                    run_input=str(run_input),
+                    output_prefix=str(output_prefix),
+                    checkpoint=None,
+                    nsteps=1,
+                )
+            )
+
+            with XTCFile(f"{output_prefix}.xtc", "r") as trajectory:
+                trajectory_steps = [frame.step for frame in trajectory]
+            self.assertEqual(trajectory_steps, [0, 1])
 
 
 if __name__ == "__main__":

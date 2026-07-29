@@ -170,7 +170,7 @@ def write_pdb(pdb_file_name, box_size, record_name, serial_number, atom_name, re
                     atom_id_to_written_id(serial_number[index]),           # Atom serial number
                     atom_name[index],    # Atom name, left aligned, max 4 chars
                     residue_name[index],       # Residue name
-                    chain_ID[index][-1],         # Chain ID
+                    (chain_ID[index] or " ")[-1],         # Chain ID
                     residue_sequence_number[index],           # Residue sequence number
                     x_nm[index] * 10.0, y_nm[index] * 10.0, z_nm[index] * 10.0,     # Coordinates
                     occupancy[index], b_factor[index],  # Occupancy, B-factor

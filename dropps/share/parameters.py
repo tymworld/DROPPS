@@ -20,7 +20,11 @@ parameters_dict_template = {
     
     # Output control
     "nst_xout"    : 1000,
-    "nst_cp"      : 10000,
+    # Deprecated compatibility key; mdrun -cpt now controls wall-clock
+    # checkpointing and always saves a final checkpoint.
+    "nst_cp"      : 0,
+    "nst_energy"  : 10000,
+    "energy_grps" : "potentialEnergy,kineticEnergy,totalEnergy,temperature,boxX,boxY,boxZ,volume,density",
     "nst_stress"  : 0,
     "stress_strain"    : 0.0003,
     "stress_output"    : "auto",
@@ -32,6 +36,8 @@ parameters_dict_template = {
 
     "nst_screenlog"  : 1000,
     "nst_filelog"    : 10000,
+    # Deprecated compatibility keys. Progress log fields are now fixed;
+    # filelog_grps is treated as an energy_grps alias for old MDP files.
     "screenlog_grps" : "step,elapsedTime,remainingTime,speed,progress",
     "filelog_grps"    : "step,potentialEnergy,kineticEnergy",
     
@@ -70,23 +76,26 @@ def getparameter(mdp_file):
     parameters = deepcopy(parameters_dict_template)
     
     try:
-        raw_parameters = {line.strip().split("#")[0].split("=")[0].strip().replace("-", "_"):
-                          line.strip().split("#")[0].split("=")[1].strip().replace("-", "_")
-                          for line in open(mdp_file, 'r').readlines()
-                          if len(line.strip().split()) > 0 and line[0] != '#'}
+        with open(mdp_file, "r", encoding="utf-8") as stream:
+            raw_parameters = {
+                line.strip().split("#")[0].split("=")[0].strip().replace("-", "_"):
+                line.strip().split("#")[0].split("=")[1].strip().replace("-", "_")
+                for line in stream
+                if len(line.strip().split()) > 0 and line[0] != '#'
+            }
     except Exception as exc:
         print("ERROR: Cannot process parameter file %s." % mdp_file)
         print(f"ERROR: Root cause: {exc}")
         quit()
         
     for param in raw_parameters.keys():
-        if not param in parameters.keys():
+        if param not in parameters:
             print("ERROR: Unknown key %s in parameter file." % param)
             quit()
         parameters[param] = type(parameters[param])(raw_parameters[param])
 
     for param in raw_parameters.keys():
-        if type(parameters[param]) == bool:
+        if isinstance(parameters[param], bool):
             if raw_parameters[param] == "True":
                 parameters[param] = True
             elif raw_parameters[param] == "False":
@@ -94,6 +103,29 @@ def getparameter(mdp_file):
             else:
                 print("ERROR: Cannot process parameter %s = %s." % (param, raw_parameters[param]))
                 quit()
+
+    if "nst_filelog" in raw_parameters and "nst_energy" not in raw_parameters:
+        parameters["nst_energy"] = parameters["nst_filelog"]
+        print(
+            "## WARNING: nst-energy is absent; using deprecated nst-filelog "
+            "as the energy-output interval."
+        )
+    if "filelog_grps" in raw_parameters and "energy_grps" not in raw_parameters:
+        parameters["energy_grps"] = parameters["filelog_grps"]
+        print(
+            "## WARNING: filelog-grps is deprecated; treating it as "
+            "energy-grps."
+        )
+    if "screenlog_grps" in raw_parameters:
+        print(
+            "## WARNING: screenlog-grps is deprecated and ignored because "
+            "progress log fields are fixed."
+        )
+    if "nst_cp" in raw_parameters:
+        print(
+            "## WARNING: nst-cp is deprecated and ignored; use mdrun -cpt "
+            "to configure checkpoint minutes."
+        )
     
     return parameters
     

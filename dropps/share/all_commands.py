@@ -14,11 +14,13 @@ commands_modelling = [dropps.commands.help.help_commands,
                       dropps.commands.trjconv.trjconv_commands,
                       dropps.commands.gsd2xtc.gsd2xtc_commands]
 
-commands_simulation = [dropps.commands.mdrun.mdrun_commands]
+commands_simulation = [dropps.commands.mdrun.mdrun_commands,
+                       dropps.commands.rerun.rerun_commands]
 
 commands_analysis = [dropps.analysis.make_ndx.make_ndx_commands,
                      dropps.analysis.extract.extract_commands,
                      dropps.analysis.check.check_commands,
+                     dropps.analysis.energy.energy_commands,
                      dropps.analysis.density.density_commands,
                      dropps.analysis.coexistence.coexistence_commands,
                      dropps.analysis.exchange.exchange_commands,

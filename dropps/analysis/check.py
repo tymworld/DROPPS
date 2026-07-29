@@ -43,10 +43,6 @@ def check(args):
     print(f"#################### CHECKED  ####################")
 
     trajectory.index.print_all()
-    while(True):
-        trajectory.getSelection_interactive()
-    
-    print("hello")
 
 from dropps.share.command_class import single_command
 check_commands = single_command("check", getargs_check, check, desc)

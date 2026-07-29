@@ -374,7 +374,7 @@ def pdb2cgps(args):
                     bondparameters = forcefield.bond2param[
                         forcefield.abbr2bondtype[f"{sequence_abbreviation[index]}-{sequence_abbreviation[index + 1]}"]
                         ]
-                    itp_file.write(f"  {(index + 1):<3d}  {(index + 2):<3d}  {bondparameters["length"]:.2f}  {bondparameters["k"]}\n")
+                    itp_file.write(f"  {(index + 1):<3d}  {(index + 2):<3d}  {bondparameters['length']:.2f}  {bondparameters['k']}\n")
                 itp_file.write("\n")
 
             elif forcefield.function_type_LJ == "Wang-Frenkel" and forcefield.function_type_Coulomb == "Debye-Huckel":
@@ -444,7 +444,7 @@ def pdb2cgps(args):
                     bondparameters = forcefield.bond2param[
                         forcefield.abbr2bondtype[f"{sequence_abbreviation[index]}-{sequence_abbreviation[index + 1]}"]
                         ]
-                    itp_file.write(f"  {(index + 1):<3d}  {(index + 2):<3d}  {bondparameters["length"]:.2f}  {bondparameters["k"]}\n")
+                    itp_file.write(f"  {(index + 1):<3d}  {(index + 2):<3d}  {bondparameters['length']:.2f}  {bondparameters['k']}\n")
                 itp_file.write("\n")
 
             else:

@@ -441,7 +441,7 @@ def contact_ng(args):
 
     time_list = []
     time_series = {category: [] for category in time_outputs}
-    frames = trajectory.Universe.trajectory[start_frame:end_frame:interval_frame]
+    frames = trajectory.Universe.trajectory[start_frame:end_frame + 1:interval_frame]
 
     for ts in tqdm(frames):
         time_list.append(ts.time / 1000.0)

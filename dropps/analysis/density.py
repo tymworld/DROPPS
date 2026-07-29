@@ -4,7 +4,6 @@
 from dropps.share.argument_parser import ArgumentParser
 from dropps.share.trajectory import trajectory_class
 
-from openmm.unit import nanosecond, picosecond
 from MDAnalysis.analysis import lineardensity as lin
 import MDAnalysis as mda
 import numpy as np
@@ -15,6 +14,22 @@ from dropps.fileio.xvg_reader import write_xvg
 
 prog = "density"
 desc = "Calculate a one-dimensional mass- or charge-density profile."
+
+
+def _frame_windows(start_frame, end_frame, interval_frame):
+    """Return inclusive, non-overlapping windows with exclusive stop indices."""
+    if end_frame < start_frame:
+        raise ValueError("end_frame must not be earlier than start_frame.")
+    if interval_frame < 1:
+        raise ValueError("interval_frame must be at least 1.")
+
+    windows = []
+    window_start = start_frame
+    while window_start <= end_frame:
+        window_stop = min(window_start + interval_frame, end_frame + 1)
+        windows.append((window_start, window_stop))
+        window_start = window_stop
+    return windows
 
 
 def shift_density_center(density_profiles, dense_phase_threshold, density_profile_for_center):
@@ -42,6 +57,10 @@ def shift_density_center(density_profiles, dense_phase_threshold, density_profil
     # Find the continuous dense phase regions considering periodic boundary conditions
     extended_dense_bins = np.concatenate([dense_bins, dense_bins])  # Extend for periodicity
     dense_region_indices = np.where(extended_dense_bins)[0]
+    if len(dense_region_indices) == 0:
+        raise ValueError(
+            "Cannot locate a dense phase with the requested density threshold."
+        )
 
     # Find the largest continuous region in the dense bins
     dense_phases = []
@@ -121,15 +140,6 @@ def density(args):
 
     output_file_name = args.output if args.output.endswith(".xvg") else args.output + ".xvg"
 
-    # We now create output file.
-    try:
-        ofile = open(output_file_name, 'w')
-        print("## Open text file %s for output." % output_file_name)
-    except Exception as exc:
-        print("## An exception occurred when trying to open text file %s for output." % output_file_name)
-        print(f"## Root cause: {exc}")
-        quit()
-
     # load trajectory into memory
 
     try:
@@ -141,22 +151,9 @@ def density(args):
 
     # We treat time for analysis and generate frame for analysis
 
-    start_time = args.start_time * nanosecond if args.start_time is not None else trajectory.time_init()
-    end_time = args.end_time * nanosecond if args.end_time is not None else trajectory.time_end()
-    center_interval_time = args.delta_time * nanosecond
-
-    if start_time < trajectory.time_init() or end_time > trajectory.time_end():
-        print(f"ERROR: Trajectory containing {trajectory.time_init()} - {trajectory.time_end()} "
-              + f"while you demanding {start_time} - {end_time}.")
-        print(f"YOU MUST BE KIDDING ME.")
-        quit()
-
-    start_frame = int((start_time - trajectory.time_init()).value_in_unit(picosecond) / trajectory.time_step().value_in_unit(picosecond))
-    end_frame = int((end_time - trajectory.time_init()).value_in_unit(picosecond) / trajectory.time_step().value_in_unit(picosecond))
-    center_interval_frame = int(center_interval_time.value_in_unit(picosecond) / trajectory.time_step().value_in_unit(picosecond))
-
-    print(f"## Will use time {start_time} to {end_time} with recentering interval of {center_interval_time}.")
-    print(f"## Will use frame {start_frame} to {end_frame} with recentering interval of {center_interval_frame}.")
+    start_frame, end_frame, center_interval_frame = trajectory.time2frame(
+        args.start_time, args.end_time, args.delta_time
+    )
     
     print(f"## Will calculate density profile along the {args.axis} axis.")
 
@@ -165,8 +162,11 @@ def density(args):
     else:
         print(f"## Will center dense which is defined as blocks with density higher than {args.dense_phase_threshold} * highest-density.")
 
-    # Build a frame list
-    frames = range(start_frame, end_frame, center_interval_frame)
+    # Build inclusive, non-overlapping frame windows. MDAnalysis uses an
+    # exclusive stop index, so the last window stops at end_frame + 1.
+    frame_windows = _frame_windows(
+        start_frame, end_frame, center_interval_frame
+    )
 
     # We now generate atom groups for dense phase determination and density calculations
 
@@ -180,7 +180,8 @@ def density(args):
         fit_group, fit_group_name = trajectory.getSelection_interactive("group for dense phase determination")
     
     if args.selection_calculate is not None:
-        print(f"## Will use groups {','.join([f"{i}" for i in args.selection_calculate])} for density calculations.")
+        group_ids = ",".join(str(i) for i in args.selection_calculate)
+        print(f"## Will use groups {group_ids} for density calculations.")
         density_groups = [trajectory.getSelection(f"group {gid}")[0] for gid in args.selection_calculate]
         density_groups_names = [f"group{i}" for i in args.selection_calculate]
     else:
@@ -188,7 +189,7 @@ def density(args):
     
     # Initialize the main density profile array
     density_profiles = None
-    period_number = len(frames) - 1
+    period_number = len(frame_windows)
 
     #all_groups = [fit_group]
     #all_groups.extend(density_groups)
@@ -196,15 +197,13 @@ def density(args):
     #for sel in all_groups:
     #    assert isinstance(sel, mda.core.groups.AtomGroup), "Selection must be an AtomGroup"
 
-    for index in tqdm.tqdm(range(period_number), desc='## Calculating'):
-        start_frame = frames[index]
-        end_frame = frames[index + 1]
+    for window_start, window_stop in tqdm.tqdm(frame_windows, desc='## Calculating'):
 
         # Load selected frames into MDAnalysis
 
-        mass_density_for_center_analyzer = lin.LinearDensity(fit_group, grouping='atoms', binsize=0.5).run(start=start_frame, stop=end_frame)
+        mass_density_for_center_analyzer = lin.LinearDensity(fit_group, grouping='atoms', binsize=0.5).run(start=window_start, stop=window_stop)
 
-        density_profiles_temp = [lin.LinearDensity(selection, grouping='atoms', binsize=0.5).run(start=start_frame, stop=end_frame)
+        density_profiles_temp = [lin.LinearDensity(selection, grouping='atoms', binsize=0.5).run(start=window_start, stop=window_stop)
                                 for selection in density_groups]
         
         axis = getattr(args, "axis", "z")  # Default to "z" if not set

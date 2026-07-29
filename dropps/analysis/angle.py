@@ -82,7 +82,7 @@ def angle(args):
 
     start_frame, end_frame, interval_frame = trajectory.time2frame(args.start_time, args.end_time, args.delta_time)
 
-    frame_list = list(range(start_frame, end_frame, interval_frame))
+    frame_list = list(range(start_frame, end_frame + 1, interval_frame))
 
     # We now generate atom groups for calculations
 
@@ -116,7 +116,8 @@ def angle(args):
         quit()
 
     print(f"## Removing terminal residues, we will process {len(chains_without_terminal)} chains each with {len(chains_without_terminal[0])} angles.")
-    print(f"## The residue indices of the center atoms are {','.join([f"{i}" for i in resIDs[0]])}")
+    residue_ids = ",".join(str(i) for i in resIDs[0])
+    print(f"## The residue indices of the center atoms are {residue_ids}")
 
     angle_number_per_chain = len(chains_without_terminal[0])
     chain_number = len(chains_without_terminal)
@@ -199,5 +200,3 @@ def angle(args):
 
 from dropps.share.command_class import single_command
 angle_commands = single_command("angle", getargs_angle, angle, desc)
-
-

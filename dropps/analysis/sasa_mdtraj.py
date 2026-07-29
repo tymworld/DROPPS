@@ -60,7 +60,7 @@ def sasa(args):
 
     print(f"## Starting SASA calculation from frame {start_frame} to frame {end_frame} with interval {interval_frame}.")
     
-    sasa_analysis = mdtraj.shrake_rupley(mdtraj_universe[start_frame:end_frame:interval_frame])
+    sasa_analysis = mdtraj.shrake_rupley(mdtraj_universe[start_frame:end_frame + 1:interval_frame])
     print(sasa_analysis.shape)
     
 

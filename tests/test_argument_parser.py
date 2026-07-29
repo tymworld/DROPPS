@@ -11,6 +11,7 @@ class ArgumentParserHelpTests(unittest.TestCase):
         self.parser.add_argument("-o", "--output-prefix", required=True, help="Output prefix.")
         self.parser.add_argument("--axis", choices=["x", "y", "z"], default="z", help="Axis.")
         self.parser.add_argument("--enabled", action="store_true", default=False, help="Enable it.")
+        self.parser.add_argument("--optional", help="Optional override.")
 
     def test_help_is_grouped_by_option_role(self):
         help_text = self.parser.format_help()
@@ -31,7 +32,14 @@ class ArgumentParserHelpTests(unittest.TestCase):
 
         self.assertIn("(default: z)", help_text)
         self.assertIn("(default: False)", help_text)
-        self.assertNotIn("(default: None)", help_text)
+        self.assertIn("Optional override. (default: None)", help_text)
+
+    def test_help_marks_required_arguments(self):
+        help_text = self.parser.format_help()
+
+        self.assertIn("Input TPR. (required)", help_text)
+        self.assertIn("Output prefix. (required)", help_text)
+        self.assertNotIn("Input TPR. (default:", help_text)
 
     def test_file_and_prefix_metavars_are_consistent(self):
         help_text = self.parser.format_help()
@@ -68,13 +76,17 @@ class ArgumentParserHelpTests(unittest.TestCase):
     def test_mutually_exclusive_arguments_stay_in_requested_section(self):
         parser = ArgumentParser(prog="exclusive")
         sources = parser.add_mutually_exclusive_group(required=True, section="input")
-        sources.add_argument("--run-input", metavar="FILE")
-        sources.add_argument("--topology", metavar="FILE")
+        sources.add_argument("--run-input", metavar="FILE", help="Run input.")
+        sources.add_argument("--topology", metavar="FILE", help="Topology.")
 
         help_text = parser.format_help()
         self.assertIn("(--run-input FILE | --topology FILE)", help_text)
         self.assertIn("Input:", help_text)
         self.assertNotIn("options:", help_text.lower())
+        self.assertEqual(
+            help_text.count("(required: choose one option from this group)"),
+            2,
+        )
 
     def test_existing_default_description_is_not_duplicated(self):
         parser = ArgumentParser(prog="documented")

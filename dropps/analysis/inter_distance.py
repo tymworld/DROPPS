@@ -81,22 +81,20 @@ def inter_distance(args):
 
     start_frame, end_frame, interval_frame = trajectory.time2frame(args.start_time, args.end_time, args.delta_time)
 
-    frame_list = list(range(start_frame, end_frame, interval_frame))
+    frame_list = list(range(start_frame, end_frame + 1, interval_frame))
 
     # We now generate atom groups for calculations
 
     if args.reference is not None:
         print(f"## Will use group {args.reference} for distance calculations.")
-        reference = trajectory.getSelection(f"group {args.reference}")
-        reference_name = f"group{args.reference}"
+        reference, reference_name = trajectory.getSelection(f"group {args.reference}")
     else:
         trajectory.index.print_all()
         reference, reference_name = trajectory.getSelection_interactive("distance calculation reference")
     
     if args.selection is not None:
         print(f"## Will use group {args.selection} for distance calculations.")
-        selection = trajectory.getSelection(f"group {args.selection}")
-        selection_name = f"group{args.selection}"
+        selection, selection_name = trajectory.getSelection(f"group {args.selection}")
     else:
         trajectory.index.print_all()
         selection, selection_name = trajectory.getSelection_interactive("distance calculation selection")

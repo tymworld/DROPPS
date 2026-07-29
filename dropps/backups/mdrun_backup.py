@@ -75,7 +75,7 @@ mdsystem, mdtopology, positions = build_system(args.structure, args.topology, ge
 # We now set up the integrator
 
 if parameters["integrator"] != "Langevin":
-    print(f"ERROR: Interator {parameters["integrator"]} is not supported")
+    print(f"ERROR: Interator {parameters['integrator']} is not supported")
     quit()
 
 temperature = parameters["production_temperature"] * kelvin
@@ -117,7 +117,7 @@ if platform is None:
 # We now set translational velocity remover
 if parameters["comm_mode"] == "Linear":
     mdsystem.addForce(openmm.CMMotionRemover(parameters["nstcomm"]))
-    print(f"## Center of mass translational velocity will be removed every {parameters["nstcomm"]} steps.")
+    print(f"## Center of mass translational velocity will be removed every {parameters['nstcomm']} steps.")
 else:
     print(f"## WARNING: Center of mass translational velocity will not be removed.")
 
@@ -208,7 +208,7 @@ if parameters["nst_screenlog"] > 0:
 
     fields_screenlog = parameters["screenlog_grps"].strip().split(',')
     kwargs = {key: (key in fields_screenlog) for key in valid_keys}
-    print(f"## REPORTER: Will report {', '.join([key for key in kwargs.keys() if kwargs[key]])} to screen every {parameters["nst_screenlog"]} steps.")
+    print(f"## REPORTER: Will report {', '.join([key for key in kwargs.keys() if kwargs[key]])} to screen every {parameters['nst_screenlog']} steps.")
     reporter_screen = openmm.app.StateDataReporter(sys.stdout, reportInterval = parameters["nst_screenlog"], 
                                                    **kwargs, totalSteps=(production_nstep + warming_nstep),
                                                    separator='\t')
@@ -218,7 +218,7 @@ if parameters["nst_filelog"] > 0:
 
     fields_filelog = parameters["filelog_grps"].strip().split(',')
     kwargs = {key: (key in fields_filelog) for key in valid_keys}
-    print(f"## REPORTER: Will report {', '.join([key for key in kwargs.keys() if kwargs[key]])} to file {log_file_path} every {parameters["nst_filelog"]} steps.")
+    print(f"## REPORTER: Will report {', '.join([key for key in kwargs.keys() if kwargs[key]])} to file {log_file_path} every {parameters['nst_filelog']} steps.")
     reporter_file = openmm.app.StateDataReporter(log_file_path, reportInterval = parameters["nst_filelog"], 
                                                  **kwargs, totalSteps=(production_nstep + warming_nstep))
     simulation.reporters.append(reporter_file)
@@ -227,13 +227,13 @@ if parameters["nst_xout"] > 0:
 
     reporter_xtc = openmm.app.XTCReporter(traj_file_path, reportInterval = parameters["nst_xout"])
     simulation.reporters.append(reporter_xtc)
-    print(f"## REPORTER: Will report trajectory to file {traj_file_path} every {parameters["nst_xout"]} steps.")
+    print(f"## REPORTER: Will report trajectory to file {traj_file_path} every {parameters['nst_xout']} steps.")
 
 if parameters["nst_cp"] > 0:
 
     reporter_checkpoint = openmm.app.CheckpointReporter(checkpoint_file_path, reportInterval=parameters["nst_cp"])
     simulation.reporters.append(reporter_checkpoint)
-    print(f"## REPORTER: Will flush checkpoint to file {checkpoint_file_path} every {parameters["nst_cp"]} steps.")
+    print(f"## REPORTER: Will flush checkpoint to file {checkpoint_file_path} every {parameters['nst_cp']} steps.")
 
 print(f"## The mdsystem contains {len(simulation.reporters)} types of reporters. They are listed as follows:")
 
@@ -271,7 +271,7 @@ if temperature_initial < temperature_final:
     print(f"## Warming completed.")
     
 # Production run
-print(f"## Production initilized for {parameters["nsteps"]} steps corresponding to {parameters["dt"] / 1000 * nanosecond * parameters["nsteps"]}.")
+print(f"## Production initilized for {parameters['nsteps']} steps corresponding to {parameters['dt'] / 1000 * nanosecond * parameters['nsteps']}.")
 simulation.integrator.setTemperature(temperature_final * kelvin)
 simulation.step(parameters["nsteps"])
 now = datetime.now() # current date and time

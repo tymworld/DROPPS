@@ -3,6 +3,7 @@ from .check import check_commands
 from .contact_map_deprecate import contactmap_commands
 from .contact_number_deprecate import contact_number_commands
 from .density import density_commands
+from .energy import energy_commands
 from .coexistence import coexistence_commands
 from .exchange import exchange_commands
 from .phase_msd import phase_msd_commands

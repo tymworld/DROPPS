@@ -1,8 +1,11 @@
 import unittest
+import argparse
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
+from unittest.mock import patch
 
 from dropps.share.all_commands import all_commands
+from dropps.share.argument_parser import ArgumentParser
 from scripts.update_readme_commands import _parse_all_commands, _render_commands_section
 
 
@@ -32,11 +35,54 @@ class CLIHelpConsistencyTests(unittest.TestCase):
                 self.assertIn("Input:", help_text)
                 self.assertIn("Parameters:", help_text)
                 self.assertNotIn("\noptions:", help_text)
-                self.assertNotIn("(default: None)", help_text)
                 self.assertLess(help_text.index("Input:"), help_text.index("Parameters:"))
                 if "Output:" in help_text:
                     self.assertLess(help_text.index("Input:"), help_text.index("Output:"))
                     self.assertLess(help_text.index("Output:"), help_text.index("Parameters:"))
+
+    def test_every_visible_option_reports_required_or_default_status(self):
+        for command in all_commands.command_names:
+            if command == "help":
+                continue
+            with self.subTest(command=command):
+                stdout = StringIO()
+                captured_parsers = []
+                original_parse_args = ArgumentParser.parse_args
+
+                def capture_parser(parser, *args, **kwargs):
+                    captured_parsers.append(parser)
+                    return original_parse_args(parser, *args, **kwargs)
+
+                with patch.object(ArgumentParser, "parse_args", capture_parser):
+                    with redirect_stdout(stdout), redirect_stderr(StringIO()):
+                        with self.assertRaises(SystemExit):
+                            self._parse(command, ["-h"])
+
+                help_text = stdout.getvalue()
+                self.assertEqual(len(captured_parsers), 1)
+                parser = captured_parsers[0]
+                parser.format_help()
+                formatter = parser._get_formatter()
+
+                for action in parser._actions:
+                    if action.help is argparse.SUPPRESS:
+                        continue
+                    status_help = formatter._get_help_string(action)
+                    if (
+                        getattr(action, "required", False)
+                        or getattr(action, "_dropps_required_group", False)
+                    ):
+                        self.assertIn("(required", status_help)
+                    elif action.default is not argparse.SUPPRESS:
+                        has_default = (
+                            "%(default)" in status_help
+                            or formatter._DOCUMENTED_DEFAULT.search(status_help)
+                            is not None
+                        )
+                        self.assertTrue(
+                            has_default,
+                            f"{command} option {action.option_strings} omits its default",
+                        )
 
     def test_command_catalog_has_consistent_usage_and_sections(self):
         stdout = StringIO()

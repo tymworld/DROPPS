@@ -22,6 +22,8 @@ from dropps.analysis.surface_tension_core import (
     surface_tension_from_energy_pair,
     volume_preserving_deformation,
 )
+from dropps.commands.rerun import getargs_rerun, rerun
+from dropps.share.energy_reporter import read_edr
 
 
 class SurfaceTensionCoreTests(unittest.TestCase):
@@ -159,6 +161,7 @@ class SurfaceTensionOpenMMTests(unittest.TestCase):
                 "vdwtype": "none",
                 "pcoulp": False,
                 "bondtype": "bond",
+                "dt": 0.001,
             },
             "mdsystem": system,
             "mdtopology": topology,
@@ -226,6 +229,35 @@ class SurfaceTensionOpenMMTests(unittest.TestCase):
             ]
             self.assertEqual(len(data_lines), 3)
             self.assertTrue(all(len(line.split()) == 5 for line in data_lines))
+
+            rerun_path = directory / "rerun.edr"
+            rerun(
+                getargs_rerun(
+                    [
+                        "-s",
+                        str(tpr_path),
+                        "-f",
+                        str(xtc_path),
+                        "-o",
+                        str(rerun_path),
+                        "--terms",
+                        "potentialEnergy",
+                        "volume",
+                        "configPzz",
+                        "--platform",
+                        "Reference",
+                        "--strain",
+                        "1e-5",
+                    ]
+                )
+            )
+            rerun_data = read_edr(rerun_path)
+            self.assertEqual(
+                rerun_data.header.fields,
+                ("potentialEnergy", "volume", "configPzz"),
+            )
+            self.assertEqual(len(rerun_data.steps), 3)
+            np.testing.assert_allclose(rerun_data.values["volume"], 240.0)
 
 
 if __name__ == "__main__":

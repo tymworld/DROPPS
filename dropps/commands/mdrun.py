@@ -1,10 +1,12 @@
 # mdrun tool in CGPS package by Yiming Tang @ Fudan
 # Development started on June 6 2025
 
-import os
-import sys
 import json
+import math
+import os
 import pickle
+import sys
+import time
 
 import numpy as np
 
@@ -33,9 +35,223 @@ from dropps.share.restart import (
     truncate_delimited_report,
     truncate_xtc,
 )
+from dropps.share.energy_reporter import (
+    EnergyReporter,
+    PRESSURE_FIELDS,
+    normalize_field_names,
+)
+from dropps.share.progress_reporter import ProgressReporter
 from dropps.share.stress_tensor_reporter import StressTensorReporter
+from dropps.share.mdrun_config import (
+    RuntimeOptions,
+    next_part_number,
+    numbered_checkpoint_path,
+    resolve_output_paths,
+    resolve_runtime_options,
+)
+
+
+_PLATFORM_PREFERENCE = ("CUDA", "OpenCL", "CPU", "Reference")
+_GPU_PLATFORMS = frozenset({"CUDA", "OpenCL"})
+_WALLCLOCK_POLL_STEPS = 1000
+
+
+def _platform_candidates(options):
+    available = {
+        openmm.Platform.getPlatform(index).getName():
+        openmm.Platform.getPlatform(index)
+        for index in range(openmm.Platform.getNumPlatforms())
+    }
+    print("## Available OpenMM platforms:", ", ".join(available))
+
+    if options.platform != "auto":
+        if options.platform not in available:
+            raise RuntimeError(
+                f"Requested OpenMM platform {options.platform} is not available. "
+                f"Available platforms: {', '.join(available)}."
+            )
+        names = [options.platform]
+    elif options.threads is not None:
+        names = ["CPU"] if "CPU" in available else []
+    elif options.device_index is not None or options.precision is not None:
+        names = [name for name in ("CUDA", "OpenCL") if name in available]
+    else:
+        names = [name for name in _PLATFORM_PREFERENCE if name in available]
+
+    if not names:
+        raise RuntimeError(
+            "No available OpenMM platform can satisfy the requested runtime "
+            "options."
+        )
+    return [available[name] for name in names]
+
+
+def _platform_properties(platform, options):
+    platform_name = platform.getName()
+    property_names = set(platform.getPropertyNames())
+    properties = {}
+
+    if options.device_index is not None:
+        if (
+            platform_name not in _GPU_PLATFORMS
+            or "DeviceIndex" not in property_names
+        ):
+            raise ValueError(
+                f"OpenMM platform {platform_name} does not support gpu_id."
+            )
+        properties["DeviceIndex"] = options.device_index
+
+    if platform_name in _GPU_PLATFORMS:
+        precision = options.precision or "mixed"
+        if "Precision" not in property_names:
+            if options.precision is not None:
+                raise ValueError(
+                    f"OpenMM platform {platform_name} does not support precision."
+                )
+        else:
+            properties["Precision"] = precision
+    elif options.precision is not None:
+        raise ValueError(
+            f"OpenMM platform {platform_name} does not support precision."
+        )
+
+    if options.threads is not None:
+        if platform_name != "CPU" or "Threads" not in property_names:
+            raise ValueError(
+                f"OpenMM platform {platform_name} does not support nt."
+            )
+        properties["Threads"] = str(options.threads)
+
+    return properties
+
+
+def _create_simulation(
+    topology,
+    system,
+    options,
+    temperature,
+    friction,
+    timestep,
+):
+    errors = []
+    for platform in _platform_candidates(options):
+        try:
+            properties = _platform_properties(platform, options)
+            integrator = openmm.LangevinIntegrator(
+                temperature, friction, timestep
+            )
+            integrator.setRandomNumberSeed(options.random_seed)
+            simulation = openmm.app.Simulation(
+                topology,
+                system,
+                integrator,
+                platform,
+                properties,
+            )
+        except Exception as exc:
+            if options.platform != "auto":
+                raise RuntimeError(
+                    f"Could not initialize OpenMM platform {platform.getName()}: "
+                    f"{exc}"
+                ) from exc
+            errors.append(f"{platform.getName()}: {exc}")
+            continue
+
+        print(f"## Using OpenMM platform {platform.getName()}.")
+        if properties:
+            print("## Platform properties:", json.dumps(properties, sort_keys=True))
+        return simulation
+
+    detail = "; ".join(errors) or "no platform candidates were available"
+    raise RuntimeError(f"Could not initialize an OpenMM simulation: {detail}")
+
+
+def _save_runtime_checkpoint(
+    simulation,
+    checkpoint_path,
+    number_checkpoints=False,
+    reason="periodic checkpoint",
+):
+    save_checkpoint_safely(simulation, checkpoint_path)
+    numbered_path = None
+    if number_checkpoints:
+        numbered_path = numbered_checkpoint_path(
+            checkpoint_path, simulation.currentStep
+        )
+        save_checkpoint_safely(simulation, numbered_path)
+    message = (
+        f"## Saved {reason} at step {simulation.currentStep} to "
+        f"{checkpoint_path}"
+    )
+    if numbered_path is not None:
+        message += f" and {numbered_path}"
+    print(message + ".")
+
+
+def _run_production(
+    simulation,
+    remaining_steps,
+    checkpoint_path,
+    options: RuntimeOptions,
+    clock=None,
+    started_at=None,
+):
+    """Run production in bounded chunks for wall-clock control."""
+
+    if clock is None:
+        clock = time.monotonic
+    if started_at is None:
+        started_at = clock()
+    checkpoint_interval = options.checkpoint_interval_seconds
+    next_checkpoint_at = (
+        None
+        if checkpoint_interval is None
+        else started_at + checkpoint_interval
+    )
+    stopped_for_maxh = False
+
+    while remaining_steps > 0:
+        now = clock()
+        max_run_seconds = options.max_run_seconds
+        if (
+            max_run_seconds is not None
+            and now - started_at >= max_run_seconds
+        ):
+            stopped_for_maxh = True
+            break
+
+        chunk_steps = min(remaining_steps, _WALLCLOCK_POLL_STEPS)
+        simulation.step(chunk_steps)
+        remaining_steps -= chunk_steps
+        now = clock()
+
+        if (
+            next_checkpoint_at is not None
+            and now >= next_checkpoint_at
+            and remaining_steps > 0
+        ):
+            _save_runtime_checkpoint(
+                simulation,
+                checkpoint_path,
+                options.number_checkpoints,
+            )
+            while next_checkpoint_at <= now:
+                next_checkpoint_at += checkpoint_interval
+
+        if (
+            max_run_seconds is not None
+            and now - started_at >= max_run_seconds
+            and remaining_steps > 0
+        ):
+            stopped_for_maxh = True
+            break
+
+    return remaining_steps, stopped_for_maxh
+
 
 def mdrun(args):
+
+    run_started_at = time.monotonic()
 
     with open(args.run_input, "rb") as f:
         loaded_params = pickle.load(f)
@@ -46,35 +262,70 @@ def mdrun(args):
     positions = loaded_params["positions"]
     pdb_raw = loaded_params["pdb_raw"]
 
-    log_file_path = args.output_prefix + ".log"
-    traj_file_path = args.output_prefix + ".xtc"
-    checkpoint_file_path = args.output_prefix + ".chk"
-    final_file_path = args.output_prefix + ".pdb"
+    runtime_options = resolve_runtime_options(args, parameters)
+    output_paths = resolve_output_paths(args, parameters)
+
+    nst_energy = parameters.get("nst_energy", parameters.get("nst_filelog", 0))
+    energy_fields = parameters.get(
+        "energy_grps",
+        parameters.get("filelog_grps", "potentialEnergy,kineticEnergy"),
+    )
+    if nst_energy > 0:
+        energy_fields = normalize_field_names(energy_fields)
+        if (
+            PRESSURE_FIELDS.intersection(energy_fields)
+            and mdsystem.getNumConstraints() > 0
+        ):
+            raise ValueError(
+                "Pressure terms in energy-grps cannot be used with constrained "
+                "bonds because the constraint virial is unavailable. Use "
+                "bondtype = bond."
+            )
 
     checkpoint_input = args.checkpoint
     if checkpoint_input == "auto":
-        checkpoint_input = checkpoint_file_path
+        checkpoint_input = output_paths.checkpoint
     is_resume = checkpoint_input is not None
     if is_resume and not os.path.isfile(checkpoint_input):
         raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_input}")
 
-    def log(line):
-        print(line)
-        log_file = open(log_file_path, 'a+')
-        log_file.write("%s  %s\n" 
-                    % (datetime.now().strftime("%Y %b.%d %H:%M"), line))
-        log_file.close()
+    if is_resume and not runtime_options.append:
+        part_number = next_part_number(output_paths)
+        output_paths = output_paths.with_part_number(part_number)
+        print(
+            f"## RESTART: Append is disabled; continuation outputs use "
+            f"part {part_number:04d}."
+        )
 
-    def notimelog(line):
-        print(line)
-        log_file = open(log_file_path, 'a+')
-        log_file.write("%s\n" % line)
-        log_file.close()
+    log_file_path = output_paths.log
+    energy_file_path = output_paths.energy
+    traj_file_path = output_paths.trajectory
+    checkpoint_file_path = output_paths.checkpoint
+    final_file_path = output_paths.final_structure
+    stress_file_path = output_paths.stress
 
     # We first get structure and topology
 
     print("## Following parameters are read and phrased from the parameter file.")
     print(json.dumps(parameters, indent=4))
+    print(
+        "## Runtime overrides: "
+        + json.dumps(
+            {
+                "nsteps": runtime_options.production_steps,
+                "seed": runtime_options.random_seed,
+                "cpt_minutes": runtime_options.checkpoint_minutes,
+                "maxh": runtime_options.max_hours,
+                "append": runtime_options.append,
+                "cpnum": runtime_options.number_checkpoints,
+                "platform": runtime_options.platform,
+                "device_index": runtime_options.device_index,
+                "precision": runtime_options.precision,
+                "threads": runtime_options.threads,
+            },
+            sort_keys=True,
+        )
+    )
 
     # We now set up the integrator
 
@@ -86,37 +337,11 @@ def mdrun(args):
     friction = parameters["friction"] / picosecond
     timestep = parameters["dt"] * picosecond
 
-    integrator = openmm.LangevinIntegrator(temperature, friction, timestep)
-    print(f"## Initializing Langevin integrator with temperature: {temperature}, friction: {friction}, time step: {timestep}.")
-
-    # We check and select platforms.
-    # Ordered list of preferred platforms
-    preferred_platforms = ['CUDA', 'OpenCL', 'CPU']
-
-    # Get available platforms
-    available_platforms = [openmm.Platform.getPlatform(i).getName() for i in range(openmm.Platform.getNumPlatforms())]
-    print("## Available platforms on this machine: ", available_platforms)
-
-    # Initialize platform and properties
-    platform = None
-    _properties = {}
-
-    # Try to select the best available platform
-    for name in preferred_platforms:
-        if name in available_platforms:
-            platform = openmm.Platform.getPlatformByName(name)
-            print(f"## Using {name} platform.")
-            if name == 'CUDA':
-                _properties = {'DeviceIndex': '0', 'Precision': 'mixed'}
-            elif name == 'OpenCL':
-                _properties = {'OpenCLDeviceIndex': '0', 'OpenCLPrecision': 'mixed'}
-            else:
-                _properties = {}  # CPU typically needs no special properties
-            break
-
-    # Safety check
-    if platform is None:
-        raise RuntimeError("No suitable OpenMM platform found.")
+    print(
+        f"## Initializing Langevin integrator with temperature: {temperature}, "
+        f"friction: {friction}, time step: {timestep}, and random seed: "
+        f"{runtime_options.random_seed}."
+    )
 
     # We now set translational velocity remover
     if parameters["comm_mode"] == "Linear":
@@ -132,7 +357,10 @@ def mdrun(args):
         pressure = parameters["ref_P"] * bar 
         tau_pressure = parameters["tau_P"]
         
-        pressure_coupling = openmm.MonteCarloBarostat(pressure, temperature, tau_pressure)
+        pressure_coupling = openmm.MonteCarloBarostat(
+            pressure, temperature, tau_pressure
+        )
+        pressure_coupling.setRandomNumberSeed(runtime_options.random_seed)
         mdsystem.addForce(pressure_coupling)
 
     #mdsystem.getForce(1).setNonbondedMethod(openmm.CustomNonbondedForce.CutoffPeriodic)
@@ -149,7 +377,14 @@ def mdrun(args):
         if isinstance(force, openmm.MonteCarloBarostat):
             print(f"## Barostat found at index {i}")
 
-    simulation = openmm.app.Simulation(mdtopology, mdsystem, integrator)
+    simulation = _create_simulation(
+        mdtopology,
+        mdsystem,
+        runtime_options,
+        temperature,
+        friction,
+        timestep,
+    )
     simulation.context.setPositions(positions)
     print("## Initial positions for the system succussfully passed to simulation.")
 
@@ -180,7 +415,6 @@ def mdrun(args):
         print(f"## ENERGY MINIMIZE: The system will be ralexed until all force smaller than {minimization_force_tol} or reaching {minimization_step} steps.")
         
         simulation.minimizeEnergy(minimization_force_tol, minimization_step)
-        simulation.minimizeEnergy()
 
         # Get the current state including energy and forces
         state = simulation.context.getState(getEnergy=True, getForces=True)
@@ -205,14 +439,20 @@ def mdrun(args):
         for i in range(simulation.system.getNumForces())]
     print(f"       {', '.join(force_names)}")
 
-    production_nstep = parameters["nsteps"]
+    production_nstep = runtime_options.production_steps
 
     temperature_initial = parameters["initial_temperature"] * kelvin
     temperature_final = parameters["production_temperature"] * kelvin
 
     if parameters["gen_vel"] is True and not is_resume:
-        simulation.context.setVelocitiesToTemperature(temperature_initial)
-        print(f"## Initializing all velocity according to a Boltzmann distribution at {temperature_initial}.")
+        simulation.context.setVelocitiesToTemperature(
+            temperature_initial, runtime_options.random_seed
+        )
+        print(
+            "## Initializing all velocities according to a Boltzmann "
+            f"distribution at {temperature_initial} with seed "
+            f"{runtime_options.random_seed}."
+        )
 
     # Warming
     if temperature_initial < temperature_final and not is_resume:
@@ -276,19 +516,20 @@ def mdrun(args):
     target_context_step = production_step_offset + production_nstep
     remaining_steps = target_context_step - checkpoint_step
 
-    stress_file_path = parameters.get("stress_output", "auto")
-    if stress_file_path.lower() == "auto":
-        stress_file_path = args.output_prefix + ".stress.xvg"
-
     trajectory_append = False
     file_log_append = False
+    energy_append = False
     stress_append = False
-    if is_resume:
+    if is_resume and runtime_options.append:
         trajectory_append = (
             os.path.isfile(traj_file_path) and os.path.getsize(traj_file_path) > 0
         )
         file_log_append = (
             os.path.isfile(log_file_path) and os.path.getsize(log_file_path) > 0
+        )
+        energy_append = (
+            os.path.isfile(energy_file_path)
+            and os.path.getsize(energy_file_path) > 0
         )
         stress_append = (
             os.path.isfile(stress_file_path)
@@ -310,6 +551,13 @@ def mdrun(args):
                 f"## RESTART: Truncated {log_file_path} to checkpoint step "
                 f"{checkpoint_step}."
             )
+        if energy_append and truncate_delimited_report(
+            energy_file_path, checkpoint_step, separator=","
+        ):
+            print(
+                f"## RESTART: Truncated {energy_file_path} to checkpoint step "
+                f"{checkpoint_step}."
+            )
         if stress_append and truncate_delimited_report(
             stress_file_path, checkpoint_step
         ):
@@ -319,44 +567,70 @@ def mdrun(args):
             )
 
     if is_resume:
-        log(
+        print(
             f"## Resume mdrun.py from production step {completed_steps}; "
             f"{remaining_steps} steps remain"
         )
     else:
-        log("## Start of mdrun.py")
+        print("## Start of mdrun.py")
 
-    valid_keys = [
-        "step", "time", "potentialEnergy", "kineticEnergy", "totalEnergy",
-        "temperature", "volume", "density", "progress", "remainingTime",
-        "speed", "elapsedTime"
-    ]
-
+    reporter_screen = None
     if parameters["nst_screenlog"] > 0:
-        fields_screenlog = parameters["screenlog_grps"].strip().split(',')
-        kwargs = {key: (key in fields_screenlog) for key in valid_keys}
-        print(f"## REPORTER: Will report {', '.join([key for key in kwargs.keys() if kwargs[key]])} to screen every {parameters['nst_screenlog']} steps.")
-        reporter_screen = openmm.app.StateDataReporter(
+        print(
+            "## REPORTER: Will report fixed progress fields step, time, "
+            f"progress, speed, elapsedTime, and remainingTime to screen every "
+            f"{parameters['nst_screenlog']} steps."
+        )
+        reporter_screen = ProgressReporter(
             sys.stdout,
-            reportInterval=parameters["nst_screenlog"],
-            **kwargs,
-            totalSteps=target_context_step,
+            report_interval=parameters["nst_screenlog"],
+            total_steps=target_context_step,
             separator='\t',
         )
         simulation.reporters.append(reporter_screen)
 
+    reporter_file = None
     if parameters["nst_filelog"] > 0:
-        fields_filelog = parameters["filelog_grps"].strip().split(',')
-        kwargs = {key: (key in fields_filelog) for key in valid_keys}
-        print(f"## REPORTER: Will report {', '.join([key for key in kwargs.keys() if kwargs[key]])} to file {log_file_path} every {parameters['nst_filelog']} steps.")
-        reporter_file = openmm.app.StateDataReporter(
+        print(
+            "## REPORTER: Will report fixed progress fields step, time, "
+            f"progress, speed, elapsedTime, and remainingTime to file "
+            f"{log_file_path} every {parameters['nst_filelog']} steps."
+        )
+        reporter_file = ProgressReporter(
             log_file_path,
-            reportInterval=parameters["nst_filelog"],
-            **kwargs,
-            totalSteps=target_context_step,
+            report_interval=parameters["nst_filelog"],
+            total_steps=target_context_step,
             append=file_log_append,
+            separator=",",
         )
         simulation.reporters.append(reporter_file)
+
+    reporter_energy = None
+    if nst_energy > 0:
+        stress_device = parameters.get("stress_device", "auto")
+        if stress_device.lower() == "auto":
+            stress_device = None
+        stress_threads = parameters.get("stress_threads", 0)
+        if stress_threads <= 0:
+            stress_threads = None
+        reporter_energy = EnergyReporter(
+            energy_file_path,
+            report_interval=nst_energy,
+            fields=energy_fields,
+            append=energy_append,
+            temperature=parameters["production_temperature"],
+            pressure_coupling=parameters["pcoulp"],
+            stress_strain=parameters.get("stress_strain", 0.0003),
+            stress_platform=parameters.get("stress_platform", "auto"),
+            stress_precision=parameters.get("stress_precision", "double"),
+            stress_device=stress_device,
+            stress_threads=stress_threads,
+        )
+        simulation.reporters.append(reporter_energy)
+        print(
+            f"## REPORTER: Will report {', '.join(reporter_energy.fields)} to "
+            f"{energy_file_path} every {nst_energy} production steps."
+        )
 
     reporter_xtc = None
     if parameters["nst_xout"] > 0:
@@ -371,6 +645,13 @@ def mdrun(args):
     reporter_stress = None
     nst_stress = parameters.get("nst_stress", 0)
     if nst_stress > 0:
+        if reporter_energy is not None and PRESSURE_FIELDS.intersection(
+            reporter_energy.fields
+        ):
+            print(
+                "## WARNING: Both EDR pressure terms and the legacy stress "
+                "reporter are enabled; pressure tensors will be calculated twice."
+            )
         if simulation.system.getNumConstraints() > 0:
             raise ValueError(
                 "nst-stress cannot be used with constrained bonds because the "
@@ -406,14 +687,16 @@ def mdrun(args):
             f"every {nst_stress} production steps."
         )
 
-    # Keep this reporter last so a checkpoint never gets ahead of trajectory,
-    # log, or stress output scheduled for the same step.
-    if parameters["nst_cp"] > 0:
-        reporter_checkpoint = openmm.app.CheckpointReporter(
-            checkpoint_file_path, reportInterval=parameters["nst_cp"]
+    if runtime_options.checkpoint_interval_seconds is None:
+        print(
+            "## CHECKPOINT: Periodic checkpointing is disabled; a checkpoint "
+            "will still be saved on exit or interruption."
         )
-        simulation.reporters.append(reporter_checkpoint)
-        print(f"## REPORTER: Will flush checkpoint to file {checkpoint_file_path} every {parameters['nst_cp']} steps.")
+    else:
+        print(
+            f"## CHECKPOINT: Will save {checkpoint_file_path} every "
+            f"{runtime_options.checkpoint_minutes:g} wall-clock minutes."
+        )
 
     print(f"## The mdsystem contains {len(simulation.reporters)} types of reporters. They are listed as follows:")
     reporter_names = [
@@ -438,29 +721,50 @@ def mdrun(args):
     )
     simulation.integrator.setTemperature(temperature_final)
 
+    stopped_for_maxh = False
     try:
-        simulation.step(remaining_steps)
+        remaining_after_run, stopped_for_maxh = _run_production(
+            simulation,
+            remaining_steps,
+            checkpoint_file_path,
+            runtime_options,
+            started_at=run_started_at,
+        )
     except KeyboardInterrupt:
-        if parameters["nst_cp"] > 0:
-            save_checkpoint_safely(simulation, checkpoint_file_path)
-            print(
-                f"## Interrupted at step {simulation.currentStep}; saved "
-                f"checkpoint to {checkpoint_file_path}."
-            )
+        _save_runtime_checkpoint(
+            simulation,
+            checkpoint_file_path,
+            runtime_options.number_checkpoints,
+            reason="interrupt checkpoint",
+        )
         raise
     else:
-        if parameters["nst_cp"] > 0:
-            save_checkpoint_safely(simulation, checkpoint_file_path)
-            print(
-                f"## Saved final checkpoint at step {simulation.currentStep} "
-                f"to {checkpoint_file_path}."
-            )
+        checkpoint_reason = (
+            "maxh checkpoint" if stopped_for_maxh else "final checkpoint"
+        )
+        _save_runtime_checkpoint(
+            simulation,
+            checkpoint_file_path,
+            runtime_options.number_checkpoints,
+            reason=checkpoint_reason,
+        )
     finally:
+        if reporter_file is not None:
+            reporter_file.close()
+        if reporter_energy is not None:
+            reporter_energy.close()
         if reporter_stress is not None:
             reporter_stress.close()
     now = datetime.now() # current date and time
     date_time = now.strftime("%Y-%m-%d, %H:%M:%S")
-    print(f"## Production run finilized at {date_time}.")
+    if stopped_for_maxh:
+        print(
+            f"## Production stopped safely for maxh at step "
+            f"{simulation.currentStep}; {remaining_after_run} steps remain "
+            f"({date_time})."
+        )
+    else:
+        print(f"## Production run finalized at {date_time}.")
 
     # Get positions in nanometers without units
     positions = simulation.context.getState(getPositions=True).getPositions(asNumpy=True).value_in_unit(nanometer)
@@ -494,12 +798,55 @@ def mdrun(args):
 prog = "mdrun"
 desc = "Run or resume a molecular-dynamics simulation from a DROPPS run-input file."
 
+
+def _nonnegative_int(value):
+    parsed = int(value)
+    if parsed < 0:
+        raise ValueError("must be zero or greater")
+    return parsed
+
+
+def _nonnegative_float(value):
+    parsed = float(value)
+    if not math.isfinite(parsed) or parsed < 0:
+        raise ValueError("must be a finite number that is zero or greater")
+    return parsed
+
+
+def _max_hours(value):
+    parsed = float(value)
+    if not math.isfinite(parsed) or (parsed < 0 and parsed != -1):
+        raise ValueError(
+            "must be -1 or a finite number that is zero or greater"
+        )
+    return parsed
+
+
+def _platform_name(value):
+    names = {
+        "auto": "auto",
+        "cuda": "CUDA",
+        "opencl": "OpenCL",
+        "cpu": "CPU",
+        "reference": "Reference",
+    }
+    try:
+        return names[value.lower()]
+    except KeyError as exc:
+        raise ValueError("unknown OpenMM platform") from exc
+
+
 def getargs_mdrun(argv):
 
     parser = ArgumentParser(prog=prog, description=desc)
 
-    parser.add_argument('-s', '--run-input', type=str, required=True, 
-                        help="Input DROPPS run file (.tpr) containing the system and simulation settings.")
+    parser.add_argument(
+        '-s', '--run-input', type=str, required=True,
+        help=(
+            "Input DROPPS run file (.tpr) containing the system and "
+            "simulation settings."
+        ),
+    )
     parser.add_argument(
         '-cpi', '--checkpoint',
         type=str,
@@ -507,12 +854,122 @@ def getargs_mdrun(argv):
         const='auto',
         required=False,
         help=(
-            "Resume from an input checkpoint file (.chk). If FILE is omitted, use "
-            "<output-prefix>.chk."
+            "Resume from an input checkpoint file (.chk). If FILE is omitted, "
+            "use the resolved checkpoint output path."
         ),
     )
-    parser.add_argument('-o', '--output-prefix', type=str, required=True,
-                        help="Output prefix for .log, .xtc, .chk, final .pdb, and optional .stress.xvg files.")
+    parser.add_argument(
+        '-o', '--output-prefix', '-deffnm',
+        type=str,
+        required=True,
+        help=(
+            "Default output prefix for .log, .edr, .xtc, .chk, final .pdb, "
+            "and optional .stress.xvg files."
+        ),
+    )
+    parser.add_argument(
+        '-x', '--trajectory-output',
+        help="Override the compressed trajectory output path.",
+    )
+    parser.add_argument(
+        '-e', '--energy-output',
+        help="Override the DROPPS EDR output path.",
+    )
+    parser.add_argument(
+        '-g', '--log-output',
+        help="Override the fixed-schema progress-log output path.",
+    )
+    parser.add_argument(
+        '-cpo', '--checkpoint-output',
+        help="Override the latest checkpoint output path.",
+    )
+    parser.add_argument(
+        '-c', '--final-structure',
+        section="output",
+        help="Override the final PDB structure output path.",
+    )
+    parser.add_argument(
+        '--stress-output',
+        help="Override the standalone pressure-tensor output path.",
+    )
+
+    parser.add_argument(
+        '--platform',
+        type=_platform_name,
+        choices=['auto', 'CUDA', 'OpenCL', 'CPU', 'Reference'],
+        default='auto',
+        help="OpenMM compute platform.",
+    )
+    parser.add_argument(
+        '-gpu_id', '-gpu-id', '--device-index',
+        help="OpenMM CUDA/OpenCL device index or comma-separated indices.",
+    )
+    parser.add_argument(
+        '--precision',
+        type=str.lower,
+        choices=['single', 'mixed', 'double'],
+        help="CUDA/OpenCL arithmetic precision; GPU default is mixed.",
+    )
+    parser.add_argument(
+        '-nt', '--threads',
+        type=_nonnegative_int,
+        default=0,
+        help="CPU platform thread count; 0 uses the OpenMM default.",
+    )
+    parser.add_argument(
+        '-nsteps', '--nsteps',
+        type=_nonnegative_int,
+        help="Override the TPR production target in steps for this run.",
+    )
+    parser.add_argument(
+        '--seed',
+        type=_nonnegative_int,
+        help="Override the TPR random seed for a new run.",
+    )
+    parser.add_argument(
+        '-cpt', '--checkpoint-minutes',
+        type=_nonnegative_float,
+        default=5.0,
+        help=(
+            "Wall-clock minutes between periodic checkpoints; 0 disables "
+            "periodic saves, but a final or interrupt checkpoint is still saved."
+        ),
+    )
+    parser.add_argument(
+        '-cpnum', '--number-checkpoints',
+        action='store_true',
+        default=False,
+        help="Keep step-numbered checkpoint copies in addition to the latest file.",
+    )
+    parser.add_argument(
+        '-maxh', '--max-hours',
+        type=_max_hours,
+        default=-1.0,
+        help=(
+            "Stop production safely after 0.99 times this many hours; -1 "
+            "disables the limit."
+        ),
+    )
+    append_group = parser.add_mutually_exclusive_group(section="parameters")
+    append_group.add_argument(
+        '-append', '--append',
+        dest='append',
+        action='store_true',
+        default=True,
+        help=(
+            "Append restart outputs after rolling them back to the checkpoint. "
+            "Default: append mode."
+        ),
+    )
+    append_group.add_argument(
+        '-noappend', '--no-append',
+        dest='append',
+        action='store_false',
+        help=(
+            "Write restart outputs to the next .partNNNN files. Default: "
+            "append mode."
+        ),
+    )
 
     args = parser.parse_args(argv)
     return args

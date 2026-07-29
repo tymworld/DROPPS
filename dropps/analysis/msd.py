@@ -81,8 +81,7 @@ def msd(args):
 
     if args.selection is not None:
         print(f"## Will use group {args.selection} for Rg calculations.")
-        selection = trajectory.getSelection(f"group {args.selection}")
-        selection_name = f"group{args.selection}" 
+        selection, selection_name = trajectory.getSelection(f"group {args.selection}")
     else:
         trajectory.index.print_all()
         selection, selection_name = trajectory.getSelection_interactive()
@@ -92,7 +91,7 @@ def msd(args):
     trajectory.Universe.trajectory.add_transformations(nojump.NoJump())
     
     msd_run = MDAnalysis.analysis.msd.EinsteinMSD(selection, msd_type=args.msd_type) 
-    msd_run.run(start=start_frame, stop=end_frame, step=interval_frame)
+    msd_run.run(start=start_frame, stop=end_frame + 1, step=interval_frame)
 
     msd_timeseries = np.array(msd_run.results.timeseries)
     lagtimes = np.arange(msd_run.n_frames) * interval_frame * trajectory.time_step().value_in_unit(nanosecond)

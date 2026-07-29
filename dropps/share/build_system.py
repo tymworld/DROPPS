@@ -20,6 +20,7 @@ if __name__ == "__main__":
     sys.path.append(father_dir)
 
 import re
+import os
 from collections import defaultdict
 from dropps.fileio.itp_reader import read_itp
 from dropps.fileio.pdb_reader import read_pdb
@@ -27,12 +28,41 @@ import openmm
 import openmm.app
 from openmm.unit import nanometer, kilojoule_per_mole, moles, liter, radian, nanometer, dimensionless
 import math
-import copy
 
 
 from dropps.hp.constants import kappa_coefficient, k0
 
 import numpy as np
+
+
+def _build_exclusion_pairs(topology_list, addition_per_molecule):
+    """Build unique per-molecule 1-2/1-3 exclusions."""
+    exclusion_pairs = set()
+
+    for topology, addition in zip(topology_list, addition_per_molecule):
+        nrexcl = topology.nrexcl
+        if nrexcl not in (1, 2):
+            raise ValueError(
+                f"Only 1-2 and 1-3 exclusions are supported; "
+                f"molecule {topology.molecule_name} has nrexcl={nrexcl}."
+            )
+
+        neighbors = defaultdict(set)
+        for bond in topology.bonds or []:
+            atom_1 = bond.a1 + addition
+            atom_2 = bond.a2 + addition
+            exclusion_pairs.add(tuple(sorted((atom_1, atom_2))))
+            neighbors[atom_1].add(atom_2)
+            neighbors[atom_2].add(atom_1)
+
+        if nrexcl == 2:
+            for atom_1, direct_neighbors in neighbors.items():
+                for middle_atom in direct_neighbors:
+                    for atom_3 in neighbors[middle_atom]:
+                        if atom_1 != atom_3:
+                            exclusion_pairs.add(tuple(sorted((atom_1, atom_3))))
+
+    return [list(pair) for pair in sorted(exclusion_pairs)]
 
 def combine_topologies(topology_list):
     """
@@ -236,17 +266,25 @@ def build_system(pdb_file, top_file, parameters):
         current_section = None
 
         for line in lines:
-            line = line.strip().split('#')[0]
-            if not line or line.startswith(';'):
+            line = line.split(';')[0].split('#')[0].strip()
+            if not line:
                 continue
             if line.startswith('[') and line.endswith(']'):
                 current_section = line.strip('[]').strip().lower()
             elif current_section:
                 sections[current_section].append(line)
 
-        molecule_with_number = [re.split(r'\s+', line.split(";")[0].strip()) for line in sections["system"]]
+        molecule_with_number = [re.split(r'\s+', line) for line in sections["system"]]
 
-        loaded_topologies = [read_itp(itp_filename) for itp_filename in sections["itp files"]]
+        top_directory = os.path.dirname(os.path.abspath(top_file))
+        itp_paths = []
+        for itp_entry in sections["itp files"]:
+            itp_filename = re.split(r'\s+', itp_entry)[0]
+            if not os.path.isabs(itp_filename):
+                itp_filename = os.path.join(top_directory, itp_filename)
+            itp_paths.append(os.path.normpath(itp_filename))
+
+        loaded_topologies = [read_itp(itp_path) for itp_path in itp_paths]
 
         # We test forcefield functions for these itp files
 
@@ -266,15 +304,21 @@ def build_system(pdb_file, top_file, parameters):
 
         molecule_number_list = [int(molecule[1]) for molecule in molecule_with_number]
         print("## The following ITP files are read and loaded.")
-        for itp_filename in sections["itp files"]:
-            print(f"## Molecule name {read_itp(itp_filename).molecule_name} phrased from file {itp_filename}.")
+        for topology, itp_path in zip(loaded_topologies, itp_paths):
+            print(f"## Molecule name {topology.molecule_name} phrased from file {itp_path}.")
     
-    nrexcl = min([top.nrexcl for top in loaded_topologies])
-    if nrexcl not in [1,2]:
-        print(f"ERROR: Only 1-2 and 1-3 exclusions are supported.")
+    invalid_nrexcl = [top for top in loaded_topologies if top.nrexcl not in (1, 2)]
+    if invalid_nrexcl:
+        details = ", ".join(
+            f"{top.molecule_name}={top.nrexcl}" for top in invalid_nrexcl
+        )
+        print(f"ERROR: Only 1-2 and 1-3 exclusions are supported; found {details}.")
         quit()
 
-    print(f"## Non-bonded interaction will be calculated without 1-{1+nrexcl} interaction.")
+    nrexcl_summary = ", ".join(
+        f"{top.molecule_name}:1-{1 + top.nrexcl}" for top in loaded_topologies
+    )
+    print(f"## Non-bonded exclusions by molecule: {nrexcl_summary}.")
     
     # We get a combined list of atomtypes
     atomtypes_raw = [atype for top in loaded_topologies for atype in top.atomtypes]
@@ -350,10 +394,16 @@ def build_system(pdb_file, top_file, parameters):
     # We add harmonic bonds to the system    
 
     if parameters["bondtype"] not in ["constraint", "bond"]:
-        print(f"## ERROR: cannot process bondtype {parameters["bondtype"]}.")
+        print(f"## ERROR: cannot process bondtype {parameters['bondtype']}.")
         quit()
     
-    print(f"## Bond: Bonds will be treated as {parameters["bondtype"]}.")
+    print(f"## Bond: Bonds will be treated as {parameters['bondtype']}.")
+
+    bead_number_per_molecule = [len(top.atoms) for top in topology_list]
+    addition_per_molecule = [0]
+    addition_per_molecule.extend(
+        [sum(bead_number_per_molecule[0:id]) for id in range(1, len(bead_number_per_molecule))]
+    )
 
     if parameters["bondtype"] == "bond":
 
@@ -361,42 +411,29 @@ def build_system(pdb_file, top_file, parameters):
         bond_force.setUsesPeriodicBoundaryConditions(True)
         bond_force.setForceGroup(0)
 
-        bead_number_per_molecule = [len(top.atoms) for top in topology_list]
-        addition_per_molecule = [0]
-        addition_per_molecule.extend([sum(bead_number_per_molecule[0:id]) for id in range(1, len(bead_number_per_molecule))])
-
         for id, top in enumerate(topology_list):
             addition = addition_per_molecule[id]
-            for bond in top.bonds:
+            for bond in top.bonds or []:
                 mdtopology.addBond(atoms_topology[bond.a1 + addition], atoms_topology[bond.a2 + addition], None)
                 bond_force.addBond(bond.a1 + addition, bond.a2 + addition, bond.r0, bond.k)
                 #print(f"{bond.a1 + addition}, {bond.a2 + addition}, {bond.r0 * nanometer}, {bond.k * kilojoule_per_mole / nanometer ** 2}")
         
         mdsystem.addForce(bond_force)
 
-        # We build a bonded list for adding non-bonded exclusions
-
-        bond_list = [[bond_force.getBondParameters(id)[0], bond_force.getBondParameters(id)[1]] for id in range(bond_force.getNumBonds())]
-        bond_list_copy = [[bond_force.getBondParameters(id)[0], bond_force.getBondParameters(id)[1]] for id in range(bond_force.getNumBonds())]
-        print(f"## There are altogether {len(bond_list)} bonds.")
+        print(f"## There are altogether {bond_force.getNumBonds()} bonds.")
     
     else:
-        bead_number_per_molecule = [len(top.atoms) for top in topology_list]
-        addition_per_molecule = [0]
-        addition_per_molecule.extend([sum(bead_number_per_molecule[0:id]) for id in range(1, len(bead_number_per_molecule))])
-
         for id, top in enumerate(topology_list):
             addition = addition_per_molecule[id]
-            for bond in top.bonds:
-                mdtopology.addBond(bond.a1 + addition, bond.a2 + addition, None)
+            for bond in top.bonds or []:
+                mdtopology.addBond(
+                    atoms_topology[bond.a1 + addition],
+                    atoms_topology[bond.a2 + addition],
+                    None,
+                )
                 mdsystem.addConstraint(bond.a1 + addition, bond.a2 + addition, bond.r0)
-        
-        # We build a bonded list for adding non-bonded exclusions
 
-        bond_list = [[mdsystem.getConstraintParameters(id)[0], mdsystem.getConstraintParameters(id)[1]] for id in range(mdsystem.getNumConstraints())]
-        bond_list_copy = [[mdsystem.getConstraintParameters(id)[0], mdsystem.getConstraintParameters(id)[1]] for id in range(mdsystem.getNumConstraints())]
-    
-        print(f"## There are altogether {len(bond_list)} bonds.")
+        print(f"## There are altogether {mdsystem.getNumConstraints()} bonds.")
 
     print(f"## Bond: Bonded interaction added to system.")
     
@@ -431,33 +468,9 @@ def build_system(pdb_file, top_file, parameters):
 
     # We build an exclusion list
 
-    print(f"## Determining exclusions based on a nrexcl of {nrexcl}.")
+    print("## Determining exclusions using each molecule's nrexcl setting.")
 
-    exclusion_list = copy.deepcopy(bond_list_copy)
-
-    if nrexcl == 2:
-        # Step 1: Convert bond list to a set of frozensets for fast lookup
-        bond_set = set(frozenset((a, b)) for a, b in bond_list)
-
-        # Step 2: Precompute neighbors of each particle
-        neighbors = defaultdict(set)
-        for a, b in bond_set:
-            neighbors[a].add(b)
-            neighbors[b].add(a)
-
-        num_particles = mdsystem.getNumParticles()
-
-        # Step 3: Loop through pairs
-        for id1 in range(num_particles):
-            for id3 in range(id1 + 1, num_particles):
-                bonded = False
-                # Check if id1 and id3 are connected via a common neighbor id2
-                for id2 in neighbors[id1]:
-                    if id3 in neighbors[id2]:
-                        bonded = True
-                        break
-                if bonded:
-                    exclusion_list.append([id1, id3])
+    exclusion_list = _build_exclusion_pairs(topology_list, addition_per_molecule)
     
     print(f"## Exclusion list contains {len(exclusion_list)} pairs.")
 
