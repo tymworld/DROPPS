@@ -1,8 +1,12 @@
 # generate elestic (genelestic) tool in CGPS.ng package by Yiming Tang @ Fudan
 # Development started on June 8 2025
 
-from argparse import ArgumentParser
-from copy import deepcopy
+from dropps.share.argument_parser import ArgumentParser
+from dropps.share.command_class import single_command
+from itertools import combinations
+from pathlib import Path
+import math
+
 import numpy as np
 
 from openmm.unit import nanometer, kilojoule_per_mole
@@ -10,119 +14,180 @@ from openmm.unit import nanometer, kilojoule_per_mole
 from dropps.fileio.pdb_reader import read_pdb
 from dropps.fileio.itp_reader import read_itp, write_itp, Bond
 
+
+def _read_elastic_groups(path, atom_count):
+    groups = []
+    with open(path, encoding="utf-8") as stream:
+        for line_number, raw_line in enumerate(stream, start=1):
+            line = raw_line.split("#", 1)[0].split(";", 1)[0].strip()
+            if not line:
+                continue
+            try:
+                group = [int(value) - 1 for value in line.split()]
+            except ValueError as exc:
+                raise ValueError(
+                    f"Elastic-group line {line_number} contains a non-integer bead ID."
+                ) from exc
+            if len(group) < 2:
+                raise ValueError(
+                    f"Elastic-group line {line_number} must contain at least two beads."
+                )
+            if len(group) != len(set(group)):
+                raise ValueError(
+                    f"Elastic-group line {line_number} contains duplicate bead IDs."
+                )
+            invalid = [index + 1 for index in group if not 0 <= index < atom_count]
+            if invalid:
+                raise ValueError(
+                    f"Elastic-group line {line_number} contains out-of-range bead "
+                    f"IDs: {invalid}; valid IDs are 1-{atom_count}."
+                )
+            groups.append(group)
+    if not groups:
+        raise ValueError(f"Elastic-group file {path!r} contains no groups.")
+    return groups
+
+
 def genelastic(args):
-    output_file_prefix = args.output[0:-4] if ".itp" in args.output else args.output
-    output_file_name = output_file_prefix + ".itp"
+    if Path(args.topology).suffix.lower() != ".itp":
+        raise ValueError("Elastic-network topology input must use the .itp extension.")
+    if not math.isfinite(args.elastic_lower) or args.elastic_lower < 0.0:
+        raise ValueError("Elastic lower cutoff must be non-negative and finite.")
+    if (
+        not math.isfinite(args.elastic_upper)
+        or args.elastic_upper <= args.elastic_lower
+    ):
+        raise ValueError(
+            "Elastic upper cutoff must be finite and larger than the lower cutoff."
+        )
+    if (
+        not math.isfinite(args.elastic_force_constant)
+        or args.elastic_force_constant <= 0.0
+    ):
+        raise ValueError("Elastic force constant must be positive and finite.")
 
-    # We first get PDB files and read coordinates
+    output_path = Path(args.output)
+    if output_path.suffix.lower() != ".itp":
+        output_path = output_path.with_suffix(".itp")
 
-    try:
-        atoms, box = read_pdb(args.structure)
-        print(f"## Open structure file {args.structure} which contains {len(atoms)} atoms.")
-    except Exception as exc:
-        print("## An exception occurred when trying to open structure file %s." % args.structure)
-        print(f"## Root cause: {exc}")
-        quit()
+    atoms, _ = read_pdb(args.structure)
+    topology = read_itp(args.topology)
+    if len(atoms) != len(topology.atoms):
+        raise ValueError(
+            f"Reference structure contains {len(atoms)} beads, but topology "
+            f"defines {len(topology.atoms)}."
+        )
+    groups = _read_elastic_groups(args.elastic_residues, len(atoms))
 
-    # We next get topology
+    print(f"## Reference structure contains {len(groups)} elastic group(s).")
+    print(
+        f"## Adding nonbonded bead pairs within {args.elastic_lower:g}-"
+        f"{args.elastic_upper:g} nm at k={args.elastic_force_constant:g} "
+        "kJ mol^-1 nm^-2."
+    )
 
-    if args.topology[-3:] != "itp":
-        print("ERROR: Only itp file can be treated as input.")
-        quit()
+    existing_pairs = {
+        tuple(sorted((bond.a1, bond.a2))) for bond in (topology.bonds or [])
+    }
+    added_pairs = set()
+    coordinates_nm = np.asarray(
+        [
+            [
+                atom["x"].value_in_unit(nanometer),
+                atom["y"].value_in_unit(nanometer),
+                atom["z"].value_in_unit(nanometer),
+            ]
+            for atom in atoms
+        ],
+        dtype=float,
+    )
+    if topology.bonds is None:
+        topology.bonds = []
 
-    try:
-        topology = read_itp(args.topology)
-        print(f"## Open topology file {args.topology} which contains {len(topology.atoms)} atoms.")
-    except Exception as exc:
-        print("## An exception occurred when trying to open topology file %s." % args.topology)
-        print(f"## Root cause: {exc}")
-        quit()
+    for group in groups:
+        for atom_1, atom_2 in combinations(group, 2):
+            pair = tuple(sorted((atom_1, atom_2)))
+            if pair in existing_pairs or pair in added_pairs:
+                continue
+            distance_nm = float(
+                np.linalg.norm(coordinates_nm[atom_1] - coordinates_nm[atom_2])
+            )
+            if args.elastic_lower < distance_nm < args.elastic_upper:
+                topology.bonds.append(
+                    Bond(
+                        atom_1,
+                        atom_2,
+                        distance_nm * nanometer,
+                        args.elastic_force_constant * kilojoule_per_mole / nanometer**2,
+                    )
+                )
+                added_pairs.add(pair)
 
-    # We now get elastic profile file
+    write_itp(output_path, topology)
+    print(f"## Wrote {len(added_pairs)} new elastic bond(s) to {output_path}.")
 
-    try:
-        elastic_cluster_list = [[int(number) - 1 for number in line.strip().split()] for line in open(args.elastic_residues, 'r') if len(line) > 1]
-    except Exception as exc:
-        print("## An exception occurred when trying to open angle file %s." % args.angle_list)
-        print(f"## Root cause: {exc}")
-        quit()
-
-    print(f"## Reference structure contains {len(elastic_cluster_list)} clusters.")
-    print(f"## Will generate elastic bonds between residue within {args.elastic_lower:.2f} ~ {args.elastic_upper:.2f} nm.")
-    print(f"## Elastic bond constant will be {args.elastic_force_constant:.2f} kJ / nm ^ 2")
-
-    # We now create elastic bond profiles
-    exist_bonds = [[bond.a1, bond.a2] for bond in topology.bonds]
-
-    added_bonds = list()
-
-    addded_bond_number = 0
-
-    for cluster in elastic_cluster_list:
-        for atomid_1 in cluster:
-            for atomid_2 in cluster:
-                if any(np.array_equal(pair, [atomid_1, atomid_2]) or np.array_equal(pair, [atomid_2, atomid_1])
-                    for pair in exist_bonds):
-                    continue
-
-                if any(np.array_equal(pair, [atomid_1, atomid_2]) or np.array_equal(pair, [atomid_2, atomid_1])
-                    for pair in added_bonds):
-                    continue
-                
-                if atomid_1 == atomid_2:
-                    continue
-
-                coor_1 = np.array([atoms[atomid_1]["x"], atoms[atomid_1]["y"], atoms[atomid_1]["z"]])
-                coor_2 = np.array([atoms[atomid_2]["x"], atoms[atomid_2]["y"], atoms[atomid_2]["z"]])
-                distance = np.linalg.norm(coor_1 - coor_2)
-
-                if distance > args.elastic_lower * nanometer and distance < args.elastic_upper * nanometer:
-
-                    bond_length = distance
-                    bond_k = args.elastic_force_constant * kilojoule_per_mole / nanometer ** 2
-
-                    topology.bonds.append(Bond(atomid_1, atomid_2, bond_length, bond_k))
-                    added_bonds.append([atomid_1, atomid_2])
-                    print(f"## Adding bond (k={bond_k}) between atom {atomid_1 + 1} and {atomid_2 + 1} with distance {bond_length}.")
-                    addded_bond_number += 1
-
-    print(f"## A total number of {addded_bond_number} bonds have been added.")
-
-    # We now save the new topology file.
-
-    write_itp(output_file_name, topology)
 
 prog = "genelastic"
-desc = '''This program generate elastic network for an itp file.'''
+desc = "Add a distance-based elastic network to an ITP topology."
+
 
 def getargs_genelastic(argv):
-
     parser = ArgumentParser(prog=prog, description=desc)
 
-    parser.add_argument('-f', '--structure', type=str, required=True, 
-                        help="PDB file which is taken as input for structure.")
+    parser.add_argument(
+        "-f",
+        "--structure",
+        type=str,
+        required=True,
+        help="Input reference structure file (.pdb).",
+    )
 
-    parser.add_argument('-p', '--topology', type=str, required=True, 
-                        help="ITP file which is taken as input for topology.")
+    parser.add_argument(
+        "-p", "--topology", type=str, required=True, help="Input topology file (.itp)."
+    )
 
-    parser.add_argument('-o', '--output', type=str, required=True, 
-                        help="ITP file which to write topology with elastic network added.")
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=str,
+        required=True,
+        help="Output topology file (.itp); the extension is added if omitted.",
+    )
 
-    parser.add_argument('-er', '--elastic-residues', type=str, required=True,
-                        help="ASCII File each line of which contains group of bead on which elastic network will be added. Start with 1.")
+    parser.add_argument(
+        "-er",
+        "--elastic-residues",
+        type=str,
+        required=True,
+        help="Input text file listing one elastic-network bead group per line, using 1-based bead indices.",
+    )
 
-    parser.add_argument('-ef', '--elastic-force-constant', type=float, default=5000,
-                        help="Elastic bond force constant Fc, default: 5000")
+    parser.add_argument(
+        "-ef",
+        "--elastic-force-constant",
+        type=float,
+        default=5000,
+        help="Elastic-bond force constant, in kJ mol^-1 nm^-2.",
+    )
 
-    parser.add_argument('-el', '--elastic-lower', type=float, default=0.5,
-                        help="Elastic bond lower cutoff: F = Fc if rij < lo, default: 0.5")
+    parser.add_argument(
+        "-el",
+        "--elastic-lower",
+        type=float,
+        default=0.5,
+        help="Lower distance cutoff for elastic bonds, in nm.",
+    )
 
-    parser.add_argument('-eu', '--elastic-upper', type=float, default=0.9,
-                        help="Elastic bond upper cutoff: F = 0  if rij > up, default: 0.9")
+    parser.add_argument(
+        "-eu",
+        "--elastic-upper",
+        type=float,
+        default=0.9,
+        help="Upper distance cutoff for elastic bonds, in nm.",
+    )
 
     args = parser.parse_args(argv)
     return args
 
-from dropps.share.command_class import single_command
-genelastic_commands = single_command("genelastic", getargs_genelastic, genelastic, desc)
 
+genelastic_commands = single_command("genelastic", getargs_genelastic, genelastic, desc)

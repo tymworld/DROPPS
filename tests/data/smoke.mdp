@@ -1,0 +1,40 @@
+# Fast, deterministic publication smoke-test settings.
+integrator = Langevin
+dt = 0.01
+nsteps = 6
+friction = 1.0
+seed = 1215
+
+minimize = True
+forcetol = 100
+max-step = 100
+production-temperature = 300
+gen-vel = True
+initial-temperature = 300
+warming-speed = 1.0
+keep-warming-trajectory = False
+
+bondtype = bond
+comm-mode = Linear
+nstcomm = 2
+
+vdwtype = pLJ
+cutoff-scheme-lj = static
+cutoff-lj = 1.0
+cutoff-lj-multi = 3.0
+shift-lj = True
+coulombtype = yukawa
+cutoff-coul = 1.0
+shift-coul = True
+salt-conc = 0.1
+
+pcoulp = False
+ref-P = 1
+tau-P = 5
+
+nst-xout = 2
+nst-screenlog = 0
+nst-filelog = 2
+nst-energy = 2
+energy-grps = potentialEnergy,kineticEnergy,totalEnergy,temperature,boxX,boxY,boxZ,volume,density
+nst-stress = 0

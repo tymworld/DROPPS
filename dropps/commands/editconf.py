@@ -1,180 +1,166 @@
 # editconf tool in CGPS.ng package by Yiming Tang @ Fudan
 # Development started on June 6 2025
 
-from argparse import ArgumentParser
+from dropps.share.argument_parser import ArgumentParser
+from dropps.share.command_class import single_command
 from copy import deepcopy
 from dropps.share.pbc import unwrap_pbc
 from dropps.fileio.pdb_reader import read_pdb, write_pdb, phrase_pdb_atoms
+from dropps.fileio.filename_control import validate_extension
 import numpy as np
 from openmm.unit import nanometer
 
+
 def editconf(args):
-
-    output_file_prefix = args.output[0:-4] if ".pdb" in args.output else args.output
-    output_file_name = output_file_prefix + ".pdb"
-
-    # We first get the pdb file
-
     atoms, box = read_pdb(args.structure)
+    if not atoms:
+        raise ValueError("Input structure contains no ATOM records.")
     pdb_data = phrase_pdb_atoms(atoms, box)
+    raw_lengths = np.asarray(box.value_in_unit(nanometer), dtype=float)
+    direct_lengths = (args.x_axis, args.y_axis, args.z_axis)
+    multipliers = (
+        args.multiply_x_axis,
+        args.multiply_y_axis,
+        args.multiply_z_axis,
+    )
+    treat_pbc = (args.treat_pbc_x, args.treat_pbc_y, args.treat_pbc_z)
 
-    # We test whether each dimension should be treated
-    raw_box = box
-    raw_x = raw_box[0]
-    raw_y = raw_box[1]
-    raw_z = raw_box[2]
-
-    if args.x_axis is None and args.multiply_x_axis is None:
-        expand_x = False
-        output_x = raw_x
-    else:
-        expand_x = True
-        if args.x_axis is not None and args.multiply_x_axis is not None:
-            print("ERROR: x axis length and x axis multiplier cannot be specified together.")
-            quit()
-        if args.x_axis is not None:
-            output_x = args.x_axis * nanometer
-        else:
-            output_x = args.multiply_x_axis * raw_x
-        
-    if args.y_axis is None and args.multiply_y_axis is None:
-        expand_y = False
-        output_y = raw_y
-    else:
-        expand_y = True
-        if args.y_axis is not None and args.multiply_y_axis is not None:
-            print("ERROR: y axis length and y axis multiplier cannot be specified together.")
-            quit()
-        if args.y_axis is not None:
-            output_y = args.y_axis * nanometer
-        else:
-            output_y = args.multiply_y_axis * raw_y
-
-    if args.z_axis is None and args.multiply_z_axis is None:
-        expand_z = False
-        output_z = raw_z
-    else:
-        expand_z = True
-        if args.z_axis is not None and args.multiply_z_axis is not None:
-            print("ERROR: z axis length and z axis multiplier cannot be specified together.")
-            quit()
-        if args.z_axis is not None:
-            output_z = args.z_axis * nanometer
-        else:
-            output_z = args.multiply_z_axis * raw_z
-
-
-    # We now treat pbc
+    target_lengths = raw_lengths.copy()
+    expanded = [False, False, False]
+    axis_names = "xyz"
+    for axis, (direct, multiplier) in enumerate(zip(direct_lengths, multipliers)):
+        if direct is None and multiplier is None:
+            continue
+        candidate = (
+            float(direct)
+            if direct is not None
+            else raw_lengths[axis] * float(multiplier)
+        )
+        if not np.isfinite(candidate) or candidate <= raw_lengths[axis]:
+            raise ValueError(
+                f"New {axis_names[axis]} box length must be finite and larger "
+                f"than the current {raw_lengths[axis]:g} nm."
+            )
+        target_lengths[axis] = candidate
+        expanded[axis] = True
 
     coordinates = np.array([pdb_data.x_nms, pdb_data.y_nms, pdb_data.z_nms]).transpose()
     pbc_treated_coordinates = unwrap_pbc(atoms, box)
     new_coordinates = deepcopy(coordinates)
 
-    if expand_x:
-        if output_x <= raw_x:
-            print(f"ERROR: Cannot expand x axis from {raw_x} to a smaller/equal value of {output_x}.")
-            quit()
-        else:
-            new_coordinates[:,0] = pbc_treated_coordinates[:,0]
-            if not args.treat_pbc_x:
-                print("## PBC for x axis treated although input says don't.")
-            else:
-                print("## PBC for x axis treated.")
-    elif args.treat_pbc_x:
-        new_coordinates[:,0] = pbc_treated_coordinates[:,0]
-        print("## PBC for x axis treated.")
+    for axis, (must_unwrap, was_expanded) in enumerate(zip(treat_pbc, expanded)):
+        if must_unwrap or was_expanded:
+            new_coordinates[:, axis] = pbc_treated_coordinates[:, axis]
+            reason = "requested" if must_unwrap else "required by box expansion"
+            print(f"## Unwrapped the {axis_names[axis]} axis ({reason}).")
 
-    if expand_y:
-        if output_y <= raw_y:
-            print("ERROR: Cannot expand y axis from %d to a smaller/equal value of %d." % (raw_y, output_y))
-            quit()
-        else:
-            new_coordinates[:,1] = pbc_treated_coordinates[:,1]
-            coordinate = deepcopy(new_coordinates)
-            if not args.treat_pbc_y:
-                print("## PBC for y axis treated although input says don't.")
-            else:
-                print("## PBC for y axis treated.")
-    elif args.treat_pbc_y:
-        new_coordinates[:,1] = pbc_treated_coordinates[:,1]
-        print("## PBC for y axis treated.")
-            
-    if expand_z:
-        if output_z <= raw_z:
-            print("ERROR: Cannot expand z axis from %d to a smaller/equal value of %d." % (raw_z, output_z))
-            quit()
-        else:
+    translation = 0.5 * (target_lengths - raw_lengths)
+    new_coordinates += translation
+    output_file_name = validate_extension(args.output, "pdb")
 
-            new_coordinates[:,2] = pbc_treated_coordinates[:,2]
-            if not args.treat_pbc_z:
-                print("## PBC for z axis treated although input says don't.")
-            else:
-                print("## PBC for z axis treated.")
-    elif args.treat_pbc_z:
-        new_coordinates[:,2] = pbc_treated_coordinates[:,2]
-        print("## PBC for z axis treated.")
+    write_pdb(
+        output_file_name,
+        target_lengths,
+        pdb_data.record_names,
+        pdb_data.serial_numbers,
+        pdb_data.atom_names,
+        pdb_data.residue_names,
+        pdb_data.chain_IDs,
+        pdb_data.residue_sequence_numbers,
+        new_coordinates[:, 0],
+        new_coordinates[:, 1],
+        new_coordinates[:, 2],
+        pdb_data.occupancys,
+        pdb_data.bfactors,
+        pdb_data.elements,
+        pdb_data.molecule_length_list,
+    )
 
-    # We now generate a new frame
+    print(f"## Wrote resized PDB file to {output_file_name}.")
 
-    x_trans = (output_x - raw_x) / 2
-    y_trans = (output_y - raw_y) / 2
-    z_trans = (output_z - raw_z) / 2
-
-    write_pdb(output_file_name, [output_x.value_in_unit(nanometer), output_y.value_in_unit(nanometer), output_z.value_in_unit(nanometer)],
-            pdb_data.record_names,
-            pdb_data.serial_numbers,
-            pdb_data.atom_names,
-            pdb_data.residue_names,
-            pdb_data.chain_IDs,
-            pdb_data.residue_sequence_numbers,
-            new_coordinates[:,0] + x_trans.value_in_unit(nanometer),
-            new_coordinates[:,1] + y_trans.value_in_unit(nanometer),
-            new_coordinates[:,2] + z_trans.value_in_unit(nanometer),
-            pdb_data.occupancys,
-            pdb_data.bfactors,
-            pdb_data.elements,
-            pdb_data.molecule_length_list
-            )
-
-    print(f"## Ouput PDB file write to {output_file_name}.")
 
 prog = "editconf"
-desc = '''This program edit box configuration for a pdb file.'''
+desc = (
+    "Resize a PDB simulation box and optionally unwrap coordinates along selected axes."
+)
+
 
 def getargs_editconf(argv):
-
     parser = ArgumentParser(prog=prog, description=desc)
 
-    parser.add_argument('-f', '--structure', type=str, required=True, 
-                        help="PDB file which is taken as input.")
+    parser.add_argument(
+        "-f",
+        "--structure",
+        type=str,
+        required=True,
+        help="Input structure file (.pdb).",
+    )
 
-    parser.add_argument('-o', '--output', type=str, required=True, 
-                        help="PDB file which to write editted configuration.")
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=str,
+        required=True,
+        help="Output structure file (.pdb); the extension is added if omitted.",
+    )
 
-    parser.add_argument('-x', '--x-axis', type=int, 
-                        help="Length of the simulation box to output in the x axis.")
-    parser.add_argument('-y', '--y-axis', type=int, 
-                        help="Length of the simulation box to output in the y axis.")
-    parser.add_argument('-z', '--z-axis', type=int, 
-                        help="Length of the simulation box to output in the z axis.")
+    x_size = parser.add_mutually_exclusive_group()
+    x_size.add_argument(
+        "-x", "--x-axis", type=float, help="New box length along x, in nm."
+    )
+    x_size.add_argument(
+        "-mx",
+        "--multiply-x-axis",
+        type=float,
+        help="Multiplier applied to the current x box length.",
+    )
 
-    parser.add_argument('-mx', '--multiply-x-axis', type=int, 
-                        help="Multiplier to act on the length of the simulation box in the x axis.")
-    parser.add_argument('-my', '--multiply-y-axis', type=int, 
-                        help="Multiplier to act on the length of the simulation box in the y axis.")
-    parser.add_argument('-mz', '--multiply-z-axis', type=int, 
-                        help="Multiplier to act on the length of the simulation box in the z axis.")
+    y_size = parser.add_mutually_exclusive_group()
+    y_size.add_argument(
+        "-y", "--y-axis", type=float, help="New box length along y, in nm."
+    )
+    y_size.add_argument(
+        "-my",
+        "--multiply-y-axis",
+        type=float,
+        help="Multiplier applied to the current y box length.",
+    )
 
-    parser.add_argument('-px', '--treat-pbc-x', action='store_true', default=False, 
-                        help="Whether peridic images are treated in the x directions. ")
-    parser.add_argument('-py', '--treat-pbc-y', action='store_true', default=False, 
-                        help="Whether peridic images are treated in the y directions. ")
-    parser.add_argument('-pz', '--treat-pbc-z', action='store_true', default=False, 
-                        help="Whether peridic images are treated in the z directions. ")
+    z_size = parser.add_mutually_exclusive_group()
+    z_size.add_argument(
+        "-z", "--z-axis", type=float, help="New box length along z, in nm."
+    )
+    z_size.add_argument(
+        "-mz",
+        "--multiply-z-axis",
+        type=float,
+        help="Multiplier applied to the current z box length.",
+    )
 
+    parser.add_argument(
+        "-px",
+        "--treat-pbc-x",
+        action="store_true",
+        default=False,
+        help="Unwrap coordinates across periodic boundaries along x.",
+    )
+    parser.add_argument(
+        "-py",
+        "--treat-pbc-y",
+        action="store_true",
+        default=False,
+        help="Unwrap coordinates across periodic boundaries along y.",
+    )
+    parser.add_argument(
+        "-pz",
+        "--treat-pbc-z",
+        action="store_true",
+        default=False,
+        help="Unwrap coordinates across periodic boundaries along z.",
+    )
 
     args = parser.parse_args(argv)
     return args
 
-from dropps.share.command_class import single_command
+
 editconf_commands = single_command("editconf", getargs_editconf, editconf, desc)

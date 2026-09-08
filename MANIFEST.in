@@ -1,0 +1,15 @@
+include CITATION.cff
+include CHANGELOG.md
+include LICENSE
+include NOTICE
+include README.md
+include UNDOCUMENTED_COMMANDS.md
+recursive-include scripts *.py
+recursive-include tests *.py *.mdp
+recursive-include dropps/share/forcefields *.ff
+recursive-include dropps/share/templates *.mdp
+global-exclude .DS_Store
+global-exclude ._*
+global-exclude *.py[cod]
+prune **/@eaDir
+prune dropps/backups
