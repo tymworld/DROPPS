@@ -12,11 +12,12 @@
 5321 233.76 -0.9297 0.001417 -0.0000008292
 
 [ simulation-setting ]
-# name         value  type_at_NVT       type_at_NPT
-  shift-lj     True   forced            forced
-  shift-coul   True   forced            forced
-  cutoff-lj    2      recommended       recommended
-  cutoff-coul  4      recommended       recommended
+# name             value  type_at_NVT       type_at_NPT
+  shift-lj         True   forced            forced
+  shift-coul       True   forced            forced
+  cutoff_scheme_lj static recommended       recommended
+  cutoff-lj        2      recommended       recommended
+  cutoff-coul      4      recommended       recommended
 
 [ residue-type ]
 #   abbr    name    sigma     lambda          mass          charges

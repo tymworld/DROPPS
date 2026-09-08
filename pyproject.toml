@@ -1,25 +1,92 @@
 [project]
 name = "dropps"
-version = "0.4.0"
+version = "1.0"
 description = "Distributed Rapid Operation Platform for Phase-separation Simulations"
 authors = [
-    {name = "Yiming Tang",email = "ymtang@fudan.edu.cn"}
+    {name = "Yiming Tang", email = "ymtang@fudan.edu.cn"}
 ]
-license = {text = "Proprietary"}
-license-files = ["LICENSE"]
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
+keywords = [
+    "biomolecular condensates",
+    "coarse-grained molecular dynamics",
+    "liquid-liquid phase separation",
+    "OpenMM",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Physics",
+]
 dependencies = [
-    "numpy (==1.26.4)",
-    "openmm (==8.1.*)",
-    "MDAnalysis (>=2.9.0)",
+    "numpy>=1.26.4,<2; python_version < '3.10'",
+    "numpy>=1.26.4,<3; python_version >= '3.10'",
+    "openmm>=8.1,<8.2; python_version < '3.10'",
+    "openmm>=8.1,<9; python_version >= '3.10'",
+    "MDAnalysis>=2.7,<2.8; python_version < '3.10'",
+    "MDAnalysis>=2.9; python_version >= '3.10'",
     "tqdm (>=4.67)",
-    "bio (>=1.8.0)"
+    "biopython (>=1.80)",
+    "scipy",
+    "tidynamics",
+    "pandas",
+    "openpyxl",
+    "gsd"
+]
+
+[project.optional-dependencies]
+latest = [
+    "numpy>=2,<3; python_version >= '3.10'",
+    "openmm>=8.5,<9; python_version >= '3.10'",
+]
+cuda12 = [
+    "numpy>=2,<3; python_version >= '3.10'",
+    "openmm[cuda12]>=8.5,<9; python_version >= '3.10'",
+]
+cuda13 = [
+    "numpy>=2,<3; python_version >= '3.10'",
+    "openmm[cuda13]>=8.5,<9; python_version >= '3.10'",
+]
+openmm81 = [
+    "numpy>=1.26.4,<2",
+    "openmm>=8.1,<8.2",
 ]
 
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project.scripts]
 dps = "dropps.dps:main"
+
+[project.urls]
+Homepage = "https://dropps.online"
+Documentation = "https://dropps.online"
+Repository = "https://github.com/tymworld/DROPPS"
+Issues = "https://github.com/tymworld/DROPPS/issues"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["dropps*"]
+
+[tool.setuptools.package-data]
+dropps = [
+    "share/forcefields/*.ff",
+    "share/templates/*.mdp",
+]
+
+[tool.ruff]
+target-version = "py39"

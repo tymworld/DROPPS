@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use DROPPS in research, please cite the software and the accompanying article."
+title: "DROPPS Distributed Rapid Operation Platform for Phase-separation Simulations"
+type: software
+version: 1.0
+date-released: 2026-09-08
+license: Apache-2.0
+url: "https://dropps.online"
+repository-code: "https://github.com/tymworld/DROPPS"
+authors:
+  - family-names: Tang
+    given-names: Yiming
+    email: ymtang@fudan.edu.cn
+  - family-names: Yang
+    given-names: Zhongyuan
+  - family-names: Xie
+    given-names: Weikai
+  - family-names: Zhou
+    given-names: Yun
+  - family-names: Wang
+    given-names: Zihan
+  - family-names: Zhang
+    given-names: Qiyue
+  - family-names: Wei
+    given-names: Guanghong
+    email: ghwei@fudan.edu.cn

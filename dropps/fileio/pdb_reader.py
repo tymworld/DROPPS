@@ -1,34 +1,107 @@
 import math
+import operator
 from openmm.unit import nanometer
 from dataclasses import dataclass
-from typing import List
 
-#from __future__ import annotations
+# from __future__ import annotations
 from typing import Dict, Iterable, List, Sequence
 
+
+_HY36_WIDTH = 5
+_HY36_DECIMAL_LIMIT = 10**_HY36_WIDTH
+_HY36_BLOCK_SIZE = 26 * 36 ** (_HY36_WIDTH - 1)
+_HY36_UPPER_DIGITS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+_HY36_LOWER_DIGITS = _HY36_UPPER_DIGITS.lower()
+
+
+def _encode_base36(value, digits, width):
+    encoded = []
+    for _ in range(width):
+        value, remainder = divmod(value, 36)
+        encoded.append(digits[remainder])
+    if value:
+        raise ValueError("Value does not fit in the requested base-36 width.")
+    return "".join(reversed(encoded))
+
+
+def _decode_base36(value, digits):
+    digit_values = {character: index for index, character in enumerate(digits)}
+    decoded = 0
+    for character in value:
+        try:
+            digit = digit_values[character]
+        except KeyError as exc:
+            raise ValueError(f"Invalid hybrid-36 digit {character!r}.") from exc
+        decoded = decoded * 36 + digit
+    return decoded
+
+
 def atom_id_to_written_id(atom_id):
+    """Encode a non-negative atom serial in the PDB five-column hybrid-36 form."""
+
+    atom_id = operator.index(atom_id)
     if atom_id < 0:
         raise ValueError("Atom ID must be non-negative.")
-    elif atom_id < 100000:
-        return f"{atom_id:>5d}"
-    else:
-        # For atom IDs >= 100000, use hexadecimal representation
-        hex_id = hex(atom_id)[2:].upper()  # Convert to hex and remove '0x'
-        return f"{hex_id:>5s}"[-5:]  # Right-align and take last 5 characters
+    if atom_id < _HY36_DECIMAL_LIMIT:
+        return f"{atom_id:>{_HY36_WIDTH}d}"
+
+    offset = atom_id - _HY36_DECIMAL_LIMIT
+    base36_offset = 10 * 36 ** (_HY36_WIDTH - 1)
+    if offset < _HY36_BLOCK_SIZE:
+        return _encode_base36(
+            offset + base36_offset,
+            _HY36_UPPER_DIGITS,
+            _HY36_WIDTH,
+        )
+
+    offset -= _HY36_BLOCK_SIZE
+    if offset < _HY36_BLOCK_SIZE:
+        return _encode_base36(
+            offset + base36_offset,
+            _HY36_LOWER_DIGITS,
+            _HY36_WIDTH,
+        )
+
+    maximum = _HY36_DECIMAL_LIMIT + 2 * _HY36_BLOCK_SIZE - 1
+    raise ValueError(
+        f"Atom ID {atom_id} exceeds the largest five-column hybrid-36 "
+        f"serial ({maximum})."
+    )
+
 
 def written_id_to_atom_id(written_id):
-    try:
-        # Try to parse as decimal first
-        return int(written_id)
-    except ValueError:
-        # If that fails, parse as hexadecimal
-        return int(written_id, 16)
+    """Decode a decimal or standard hybrid-36 PDB atom serial."""
+
+    field = str(written_id)
+    if len(field) > _HY36_WIDTH:
+        raise ValueError(f"PDB atom serial {field!r} is wider than five columns.")
+    field = field.rjust(_HY36_WIDTH)
+    first = field[0]
+    if first in {" ", "-"} or first.isdigit():
+        return int(field)
+    if first in _HY36_UPPER_DIGITS[10:]:
+        return (
+            _decode_base36(field, _HY36_UPPER_DIGITS)
+            - 10 * 36 ** (_HY36_WIDTH - 1)
+            + _HY36_DECIMAL_LIMIT
+        )
+    if first in _HY36_LOWER_DIGITS[10:]:
+        return (
+            _decode_base36(field, _HY36_LOWER_DIGITS)
+            + 16 * 36 ** (_HY36_WIDTH - 1)
+            + _HY36_DECIMAL_LIMIT
+        )
+    raise ValueError(f"Invalid five-column PDB atom serial {field!r}.")
+
 
 def distance(bead1, bead2):
-    temp_distance = math.sqrt(pow(bead1[0] - bead2[0], 2)
-                              + pow(bead1[1] - bead2[1], 2)
-                              + pow(bead1[2] - bead2[2], 2))
+    temp_distance = math.sqrt(
+        pow(bead1[0] - bead2[0], 2)
+        + pow(bead1[1] - bead2[1], 2)
+        + pow(bead1[2] - bead2[2], 2)
+    )
     return temp_distance
+
 
 def read_pdb(pdb_path):
     """
@@ -49,13 +122,33 @@ def read_pdb(pdb_path):
 
     print(f"## Reading pdb file {pdb_path}.")
 
-    with open(pdb_path, 'r') as f:
+    with open(pdb_path, "r") as f:
         for line in f:
             if line.startswith("CRYST1"):
-                # Columns 7–15: a, 16–24: b, 25–33: c (box lengths)
+                # DROPPS currently builds only diagonal OpenMM box vectors.
+                # Rejecting tilted cells here prevents silently changing their
+                # geometry into an orthorhombic box with the same lengths.
                 lx = float(line[6:15]) / 10.0
                 ly = float(line[15:24]) / 10.0
                 lz = float(line[24:33]) / 10.0
+                alpha = float(line[33:40])
+                beta = float(line[40:47])
+                gamma = float(line[47:54])
+                lengths = (lx, ly, lz)
+                angles = (alpha, beta, gamma)
+                if not all(math.isfinite(value) and value > 0 for value in lengths):
+                    raise ValueError(
+                        f"PDB CRYST1 box lengths must be finite and positive: "
+                        f"{lengths}."
+                    )
+                if not all(math.isfinite(value) for value in angles):
+                    raise ValueError(f"PDB CRYST1 box angles must be finite: {angles}.")
+                if not all(abs(value - 90.0) <= 1.0e-3 for value in angles):
+                    raise ValueError(
+                        "DROPPS currently supports only orthorhombic PDB boxes; "
+                        f"CRYST1 angles are alpha={alpha}, beta={beta}, "
+                        f"gamma={gamma} degrees."
+                    )
                 box = [lx, ly, lz] * nanometer
                 print(f"## Box size of {pdb_path} is {lx} * {ly} * {lz} nm^3.")
 
@@ -71,11 +164,13 @@ def read_pdb(pdb_path):
                     "z": float(line[46:54]) / 10.0 * nanometer,
                     "occupancy": float(line[54:60]),
                     "bfactor": float(line[60:66]),
-                    "element": line[76:78].strip()
+                    "element": line[76:78].strip(),
                 }
                 atoms.append(atom)
         print(f"## Phrased {len(atoms)} atoms from pdb file {pdb_path}.")
 
+    if box is None:
+        raise ValueError(f"PDB file {pdb_path} has no CRYST1 periodic box record.")
     return atoms, box
 
 
@@ -96,6 +191,7 @@ class PDBData:
     molecule_list: List[List[int]]
     molecule_length_list: List[int]
     box_size: List[float]
+
 
 def phrase_pdb_atoms(atoms, box):
     box_size = box.value_in_unit(nanometer)
@@ -142,46 +238,82 @@ def phrase_pdb_atoms(atoms, box):
         elements=elements,
         molecule_list=molecule_list,
         molecule_length_list=molecule_length_list,
-        box_size=box_size
+        box_size=box_size,
     )
 
+
 def write_pdbData(pdb_file_name, data: PDBData, bond_list=None):
-    write_pdb(pdb_file_name, data.box_size, data.record_names, data.serial_numbers, data.atom_names, data.residue_names,
-              data.chain_IDs, data.residue_sequence_numbers, data.x_nms, data.y_nms, data.z_nms, data.occupancys, data.bfactors,
-              data.elements, data.molecule_length_list, bond_list)
+    write_pdb(
+        pdb_file_name,
+        data.box_size,
+        data.record_names,
+        data.serial_numbers,
+        data.atom_names,
+        data.residue_names,
+        data.chain_IDs,
+        data.residue_sequence_numbers,
+        data.x_nms,
+        data.y_nms,
+        data.z_nms,
+        data.occupancys,
+        data.bfactors,
+        data.elements,
+        data.molecule_length_list,
+        bond_list,
+    )
 
-def write_pdb(pdb_file_name, box_size, record_name, serial_number, atom_name, residue_name, chain_ID, residue_sequence_number, 
-              x_nm, y_nm, z_nm, occupancy, b_factor, element_symbol, molecule_length_list, bond_list=None):
-    
-    with open(pdb_file_name, 'w') as pdb_file:
 
-        
-        pdb_file.write(f"CRYST1{box_size[0] * 10:9.3f}{box_size[1] * 10:9.3f}{box_size[2] * 10:9.3f}  90.00  90.00  90.00 P 1           1\n")
-        TER_list = [sum(molecule_length_list[0: (i + 1)]) - 1 for i in range(len(molecule_length_list))]
+def write_pdb(
+    pdb_file_name,
+    box_size,
+    record_name,
+    serial_number,
+    atom_name,
+    residue_name,
+    chain_ID,
+    residue_sequence_number,
+    x_nm,
+    y_nm,
+    z_nm,
+    occupancy,
+    b_factor,
+    element_symbol,
+    molecule_length_list,
+    bond_list=None,
+):
+    with open(pdb_file_name, "w") as pdb_file:
+        pdb_file.write(
+            f"CRYST1{box_size[0] * 10:9.3f}{box_size[1] * 10:9.3f}{box_size[2] * 10:9.3f}  90.00  90.00  90.00 P 1           1\n"
+        )
+        TER_list = [
+            sum(molecule_length_list[0 : (i + 1)]) - 1
+            for i in range(len(molecule_length_list))
+        ]
 
         for index in range(len(atom_name)):
-
             # PDB atom line: fixed-width format
             # Columns: https://www.wwpdb.org/documentation/file-format-content/format33/sect9.html#ATOM
             pdb_file.write(
                 "{:<6s}{:>5s} {:<4s} {:>3s} {:1s}{:>4d}    "
                 "{:>8.3f}{:>8.3f}{:>8.3f}{:6.2f}{:6.2f}          {:>2s}\n".format(
-                    record_name[index],      # Record name
-                    atom_id_to_written_id(serial_number[index]),           # Atom serial number
-                    atom_name[index],    # Atom name, left aligned, max 4 chars
-                    residue_name[index],       # Residue name
-                    chain_ID[index][-1],         # Chain ID
-                    residue_sequence_number[index],           # Residue sequence number
-                    x_nm[index] * 10.0, y_nm[index] * 10.0, z_nm[index] * 10.0,     # Coordinates
-                    occupancy[index], b_factor[index],  # Occupancy, B-factor
-                    element_symbol[index]  # Element symbol (fallback)
+                    record_name[index],  # Record name
+                    atom_id_to_written_id(serial_number[index]),  # Atom serial number
+                    atom_name[index],  # Atom name, left aligned, max 4 chars
+                    residue_name[index],  # Residue name
+                    (chain_ID[index] or " ")[-1],  # Chain ID
+                    residue_sequence_number[index],  # Residue sequence number
+                    x_nm[index] * 10.0,
+                    y_nm[index] * 10.0,
+                    z_nm[index] * 10.0,  # Coordinates
+                    occupancy[index],
+                    b_factor[index],  # Occupancy, B-factor
+                    element_symbol[index],  # Element symbol (fallback)
                 )
             )
             if index in TER_list:
                 pdb_file.write("TER\n")
-        
-        if bond_list is not None:
 
+        if bond_list is not None:
             for ln in conect_lines_from_bond_dict(bond_list):
                 pdb_file.write(f"{ln}\n")
 
@@ -215,7 +347,9 @@ def conect_lines_from_bond_dict(
         for i in range(0, len(bonded0), 4):
             chunk = bonded0[i : i + 4]
             # Build fixed-width fields: "CONECT" + 5*integer(5 cols each)
-            fields = ["CONECT", f"{a_serial:>5d}"] + [f"{(b + 1):>5d}" for b in chunk]
+            fields = ["CONECT", atom_id_to_written_id(a_serial)] + [
+                atom_id_to_written_id(b + 1) for b in chunk
+            ]
             line = "".join(fields).ljust(31)  # pad to at least through col 31
-            lines.append(line.rstrip())        # keep clean; PDB readers usually accept this
+            lines.append(line.rstrip())  # keep clean; PDB readers usually accept this
     return lines

@@ -1,74 +1,91 @@
-# Template parameter file for MD simulation
+# DROPPS molecular-dynamics parameter template
+#
+# Usage:
+#   dps grompp -f system.pdb -p system.top -m md.mdp -o run.tpr
+#   dps mdrun  -s run.tpr -o run
+#
+# Important: mdrun reads the generated TPR, not this MDP file. After changing
+# the MDP, run grompp again. Parameter names may use '-' or '_'. Boolean values
+# are case-sensitive and must be True or False.
+#
+# Units: time ps, length nm, temperature K, pressure bar, energy kJ/mol.
+# Active nst-* output intervals use production steps; checkpointing is instead
+# controlled by mdrun -cpt in wall-clock minutes (default: 5).
+# Full reference: docs/mdp-reference.md
 
-# Integration
-integrator  = Langevin       # Allowed values: Langevin, steep
-friction    = 1.0            # Friction in picosecond ^ -1
-dt          = 0.01           # Integration time step in ps
-nsteps      = 100000         # Number of steps to integrate 
-minimize    = True           # Perform constant volume minimization before this simulation
-max_step    = 100000         # Maximum number of steps to perform energy minimization
-seed        = 1215           # Seed for starting the simulation
+# 1. Integration and production length
+integrator = Langevin       # Langevin dynamics; steep runs minimization only
+dt         = 0.01           # Integration time step (ps)
+nsteps     = 100000         # Production steps; warming steps are additional
+friction   = 1.0            # Langevin friction coefficient (ps^-1)
+seed       = 1215           # Integrator, velocity, and barostat random seed
 
-comm-mode   = Linear         # Allowed values: Linear (Remove center of mass translational velocity), none.
-nstcomm     = 100            # interval for center of mass motion removal
+# 2. Preparation and temperature
+minimize   = True           # Minimize at fixed volume before a new run
+forcetol   = 100            # Minimization force tolerance (kJ mol^-1 nm^-1)
+max-step   = 100000         # Maximum minimization iterations
 
-bondtype    = bond           # Treat bond as: bond or constraint
+production-temperature = 300  # Production temperature (K)
+gen-vel                = True # Generate Maxwell-Boltzmann velocities
+initial-temperature    = 150  # Velocity-generation/warming start temperature (K)
+warming-speed          = 1.0  # Heating/cooling rate when temperatures differ (K/ns)
+keep-warming-trajectory = False # True writes <prefix>.warming.xtc per <=1 K stage
 
-# Energy minimization
-# energytol       = 10.0      # The minimization is converged when the maximum energy is smaller than this value
-forcetol        = 100         # The minimization is converged when the maximum force is smaller than this value
+# 3. Bonds and center-of-mass motion
+bondtype  = bond             # bond or constraint; pressure tensors require bond
+comm-mode = Linear           # Linear removes center-of-mass translation; none disables
+nstcomm   = 100              # Center-of-mass removal interval (steps)
 
-# Output control
-nst-xout     = 1000           # Number of steps that elapse between writing coordinates to the output trajectory file
-nst-cp       = 10000          # Number of steps that elapse between writing checkpoint
+# 4. Nonbonded interactions
+# The topology force field may require or recommend particular values here.
+vdwtype          = pLJ       # pLJ (Ashbaugh-Hatch) or MPiPi (Wang-Frenkel)
+cutoff-scheme-lj = static    # static or dynamic
+cutoff-lj        = 1.5       # Static LJ cutoff (nm)
+cutoff-lj-multi  = 3.0       # Dynamic pair cutoff = this value * pair sigma
+shift-lj         = True      # Shift LJ potential to zero at its pair cutoff
 
-nst-screenlog = 100000  # Number of steps that elapse between writing properties to screen, 0 for write nothing.
-nst-filelog = 10000   # Number of steps that elapse between writing properties to logfile, 0 for write nothing.
-screenlog-grps = step,elapsedTime,remainingTime,speed,progress   # Write these properties to log file.
-filelog-grps = step,potentialEnergy,kineticEnergy      # Write these properties to log file.
+coulombtype = yukawa         # yukawa (Debye-Huckel) or no
+cutoff-coul = 1.5            # Electrostatic cutoff (nm)
+shift-coul  = True           # Shift electrostatic potential to zero at cutoff
+salt-conc   = 0.1            # Salt concentration (mol/L)
 
-# Allowed logger: 
-# step: current step index
-# time: current time
-# potentialEnergy: potential energy
-# kineticEnergy: kinetic energy
-# totalEnergy: total energy
-# temperature: instantaneous temperature
-# volume: periodic box volume
-# density: system density
-# progress: current progress (percent completion). 
-# remainingTime: estimate of the remaining clock time until completion. 
-# speed: estimate of the simulation speed in ns/day
-# elapsedTime: elapsed time of the simulation in seconds.
+# 5. Ensemble and pressure coupling
+pcoulp = True                # True: NPT; False: fixed-volume NVT
+ref-P  = 1                   # Barostat reference pressure (bar)
+tau-P  = 5                   # Monte Carlo volume-change attempt interval (steps)
 
-# nstvout     = 10000          # Number of steps that elapse between writing velocity to the output trajectory file
+# 6. Trajectory and fixed progress logs
+nst-xout      = 1000         # Write <prefix>.xtc; includes production step 0
+nst-screenlog = 100000       # Fixed progress fields on screen
+nst-filelog   = 10000        # Fixed progress fields in CSV <prefix>.log
 
-# Neighbor searching
-nstlist     = 10       # Frequency to update the neighbor list
+# 7. Configurable thermodynamic output
+# DROPPS .edr is a versioned CSV file, not a GROMACS binary EDR.
+nst-energy  = 10000
+energy-grps = potentialEnergy,kineticEnergy,totalEnergy,temperature,boxX,boxY,boxZ,volume,density
 
-#cutoff-scheme-lj    = static  # dynamic (lj-multi   * sigma) or static (cutoff-lj)
-#cutoff-scheme-coul  = static  # dynamic (coul-multi * sigma) or static (cutoff-coul)
-#cutoff-lj-multi = 3.0         # Appliable only when cutoff-scheme-lj = dynamic
-#cutoff-coul-multi = 3.0       # Appliable only when cutoff-scheme-coul = dynamic
-cutoff-lj   = 1.5      # Default cutoff value for LJ interaction,      only when cutoff-scheme-lj = static
-cutoff-coul = 1.5      # Default cutoff value for Coulomb interaction, only when cutoff-scheme-coul = static
-shift-lj    = True     # Shift LJ potential so U(cutoff-lj)=0
-shift-coul  = True     # Shift Coulomb potential so U(cutoff-coul)=0
-buffer      = 0.5      # Buffer for neighbor searching
+# Available energy-grps terms (step and time_ps are always written):
+#   potentialEnergy, kineticEnergy, totalEnergy                  [kJ/mol]
+#   temperature                                                  [K]
+#   boxX, boxY, boxZ                                             [nm]
+#   volume                                                       [nm^3]
+#   density                                                      [g/mL]
+#   pressure, Pxx, Pyy, Pzz, Pxy, Pxz, Pyz                      [kJ mol^-1 nm^-3]
+# Pressure terms are expensive and require bondtype=bond and an orthorhombic box.
 
-# Force calculations
-coulombtype = yukawa   # Method to calculate Coulomb interaction. Allowed values: yukawa,no
-vdwtype     = pLJ      # Method to calculate vdw interactions. Allowed values: pLJ,none pLJ is perturbed LJ
-salt_conc   = 0.1      # Salt concentration in mol/L
+# 8. Optional standalone pressure-tensor XVG
+# nst-stress and EDR pressure terms share the settings below. Enabling both
+# computes the pressure tensor twice and is normally unnecessary.
+nst-stress      = 0          # Write <prefix>.stress.xvg; 0 disables it
+stress-strain   = 0.0003     # Central finite-difference strain (0 < value < 0.02)
+stress-output   = auto       # auto -> <prefix>.stress.xvg
+stress-platform = auto       # auto, CUDA, OpenCL, CPU, or Reference
+stress-precision = double    # Precision for the auxiliary OpenMM Context
+stress-device   = auto       # Device index, or auto
+stress-threads  = 0          # CPU threads; 0 uses the OpenMM default
 
-# Temperature coupling
-tcoulp                  = Bussi    # Method to perform temperature coupling. Allowed values: Bussi,no. Currently only Bussi is allowed. 
-production-temperature  = 300      # The ensemble temperature for the system.
-gen-vel                 = True     # Randomly generate velocity according to init-temperature 
-initial-temperature     = 150      # The ensemble temperature for the system.
-warming-speed           = 1        # Speed of temperature climbing if production temperature > initial temperature, in K/ns
-
-# Pressure coupling
-pcoulp   = True     # Whether to perform pressure coupling
-ref-P    = 1        # The reference pressure for coupling, in bar.
-tau-P    = 5        # Frequency at which Monte Carlo pressure changes should be attempted (in time steps)
+# 9. Reserved compatibility parameters
+# These keys are accepted but currently do not affect the simulation. They are
+# intentionally not active in this template: nst-cp, tcoulp, nstlist, buffer.
+# Use mdrun -cpt to configure checkpoint minutes; nst-cp is retained only so
+# older MDP/TPR files remain readable.

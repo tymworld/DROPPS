@@ -1,36 +1,76 @@
-import dropps.commands
-import dropps.analysis
+"""Canonical DROPPS command registry."""
 
+from dropps.analysis import (
+    angle_commands,
+    assembly_commands,
+    check_commands,
+    contact_commands,
+    contact_statistic_commands,
+    density_commands,
+    energy_commands,
+    exchange_commands,
+    gyrate_commands,
+    inter_distance_commands,
+    intra_distance_commands,
+    make_ndx_commands,
+    msd_commands,
+    pdb2bond_commands,
+    rmsd_commands,
+)
+from dropps.commands import (
+    addangle_commands,
+    convert_tpr_commands,
+    editconf_commands,
+    genelastic_commands,
+    genmesh_commands,
+    grompp_commands,
+    gsd2xtc_commands,
+    help_commands,
+    mdrun_commands,
+    modifyres_commands,
+    pdb2dps_commands,
+    rerun_commands,
+    trjconv_commands,
+)
 from dropps.share.command_class import all_commands_class
 
-commands_modelling = [dropps.commands.help.help_commands,
-                      dropps.commands.pdb2cgps.pdb2cgps_commands,
-                      dropps.commands.genelastic.genelastic_commands,
-                      dropps.commands.genmesh.genmesh_commands,
-                      dropps.commands.addangle.addangle_commands,
-                      dropps.commands.editconf.editconf_commands,
-                      dropps.commands.grompp.grompp_commands,
-                      dropps.commands.modifyres.modifyres_commands,
-                      dropps.commands.trjconv.trjconv_commands,
-                      dropps.commands.gsd2xtc.gsd2xtc_commands]
+commands_modelling = [
+    help_commands,
+    pdb2dps_commands,
+    genelastic_commands,
+    genmesh_commands,
+    addangle_commands,
+    editconf_commands,
+    grompp_commands,
+    convert_tpr_commands,
+    modifyres_commands,
+    trjconv_commands,
+    gsd2xtc_commands,
+]
 
-commands_simulation = [dropps.commands.mdrun.mdrun_commands]
+commands_simulation = [
+    mdrun_commands,
+    rerun_commands,
+]
 
-commands_analysis = [dropps.analysis.make_ndx.make_ndx_commands,
-                     dropps.analysis.extract.extract_commands,
-                     dropps.analysis.check.check_commands,
-                     dropps.analysis.density.density_commands,
-                     dropps.analysis.gyrate.gyrate_commands,
-                     #dropps.analysis.contact_map.contactmap_commands,
-                     dropps.analysis.angle.angle_commands,
-                     dropps.analysis.intra_distance.intra_distance_commands,
-                     dropps.analysis.inter_distance.inter_distance_commands,
-                     #dropps.analysis.contact_number.contact_number_commands,
-                     dropps.analysis.contact.contact_commands,
-                     dropps.analysis.contact_statistic.contact_statistic_commands,
-                     dropps.analysis.msd.msd_commands,
-                     dropps.analysis.assembly.assembly_commands,
-                     dropps.analysis.pdb2bond.pdb2bond_commands]
-                     #dropps.analysis.sasa_mdtraj.sasa_commands]
+commands_analysis = [
+    make_ndx_commands,
+    check_commands,
+    energy_commands,
+    density_commands,
+    exchange_commands,
+    gyrate_commands,
+    angle_commands,
+    intra_distance_commands,
+    inter_distance_commands,
+    contact_commands,
+    contact_statistic_commands,
+    msd_commands,
+    rmsd_commands,
+    assembly_commands,
+    pdb2bond_commands,
+]
 
-all_commands = all_commands_class(commands_modelling + commands_simulation + commands_analysis)
+all_commands = all_commands_class(
+    commands_modelling + commands_simulation + commands_analysis
+)
