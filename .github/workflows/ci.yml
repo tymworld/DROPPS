@@ -30,7 +30,7 @@ jobs:
       - name: Check syntax and formatting
         run: |
           python -m compileall -q dropps tests scripts
-          ruff check dropps tests scripts
+          ruff check --select E4,E7,E9,F dropps tests scripts
           ruff format --check dropps tests scripts
       - name: Validate Colab notebooks
         run: python examples/colab/validate_notebooks.py
