@@ -9,12 +9,12 @@ from MDAnalysis.lib.formats.libmdaxdr import XTCFile
 from dropps.commands.trjcat import trjcat
 
 
-def _write_xtc(path, atom_count, frames):
+def _write_xtc(path, atom_count, frames, precision=1000.0):
     box = np.diag([4.0, 4.0, 4.0]).astype(np.float32)
     with XTCFile(str(path), "w") as writer:
         for step, time_ps, coordinate in frames:
             positions = np.full((atom_count, 3), coordinate, dtype=np.float32)
-            writer.write(positions, box, step, time_ps, 1000.0)
+            writer.write(positions, box, step, time_ps, precision)
 
 
 def _args(inputs, output, **overrides):
@@ -33,6 +33,18 @@ def _args(inputs, output, **overrides):
 
 
 class TrjcatTests(unittest.TestCase):
+    def test_mixed_compressed_precisions_preserve_the_finest_input(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            first, second, output = [directory / name for name in ("a.xtc", "b.xtc", "out.xtc")]
+            _write_xtc(first, 12, [(0, 0.0, 0.123)], precision=1000.0)
+            _write_xtc(second, 12, [(1, 1.0, 0.1234)], precision=10000.0)
+            trjcat(_args([first, second], output))
+            with XTCFile(str(output), "r") as reader:
+                frames = list(reader)
+            self.assertEqual([frame.prec for frame in frames], [10000.0, 10000.0])
+            np.testing.assert_allclose(frames[1].x, 0.1234, atol=1.0e-5)
+
     def test_sorts_segments_and_later_file_replaces_duplicate_time(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)

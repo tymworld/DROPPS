@@ -132,7 +132,7 @@ def truncate_xtc(file, checkpoint_step):
                     frame.box,
                     frame.step,
                     frame.time,
-                    frame.prec,
+                    1000.0 if len(frame.x) <= 9 else frame.prec,
                 )
                 frames_written += 1
         if frames_written == 0:

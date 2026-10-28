@@ -36,6 +36,7 @@ class _TrajectorySource:
     first_time_ps: float
     records: tuple[_FrameRecord, ...]
     atom_count: int
+    precision: float
 
 
 def _scan_source(path, source_index):
@@ -44,6 +45,7 @@ def _scan_source(path, source_index):
     records = []
     atom_count = None
     previous_time = None
+    precision = 1000.0
     with XTCFile(path, "r") as reader:
         for frame_index, frame in enumerate(reader):
             time_ps = float(frame.time)
@@ -56,6 +58,13 @@ def _scan_source(path, source_index):
             previous_time = time_ps
 
             current_atom_count = int(np.asarray(frame.x).shape[0])
+            # XTC stores <=9 atoms as raw floats and has no precision field.
+            # libmdaxdr may expose an uninitialized value for those frames.
+            if current_atom_count > 9:
+                frame_precision = float(frame.prec)
+                if not np.isfinite(frame_precision) or frame_precision <= 0:
+                    raise ValueError(f"Trajectory {path} contains invalid XTC precision.")
+                precision = max(precision, frame_precision)
             if atom_count is None:
                 atom_count = current_atom_count
             elif current_atom_count != atom_count:
@@ -80,6 +89,7 @@ def _scan_source(path, source_index):
         first_time_ps=records[0].time_ps,
         records=tuple(records),
         atom_count=int(atom_count),
+        precision=precision,
     )
 
 
@@ -165,6 +175,9 @@ def _write_records(output, sources, records):
     os.close(descriptor)
 
     source_by_index = {source.source_index: source for source in sources}
+    # The writer requires one precision for the output. Use the finest source
+    # precision when joining segments recorded with different settings.
+    output_precision = max(source.precision for source in sources)
     try:
         with ExitStack() as stack:
             readers = {}
@@ -191,7 +204,7 @@ def _write_records(output, sources, records):
                     frame.box,
                     frame.step,
                     frame.time,
-                    frame.prec,
+                    output_precision,
                 )
         os.replace(temporary_path, output_path)
     except BaseException:

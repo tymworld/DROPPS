@@ -6,9 +6,9 @@ Date: 2026-10-28. Commands below are run from the source root.
 
 | Python | OpenMM | NumPy | MDAnalysis | Result |
 | --- | --- | --- | --- | --- |
-| 3.9.6 | 8.1.1 | 1.26.4 | 2.7.0 | 365 tests passed |
-| 3.12.13 | 8.1.0 | 1.26.4 | 2.10.0 | 365 tests passed |
-| 3.12.13 | 8.6.1 | 2.5.4 | 2.11.0 | 365 tests passed |
+| 3.9.6 | 8.1.1 | 1.26.4 | 2.7.0 | 366 tests passed |
+| 3.12.13 | 8.1.0 | 1.26.4 | 2.10.0 | 366 tests passed |
+| 3.12.13 | 8.6.1 | 2.5.4 | 2.11.0 | 366 tests passed |
 
 The suite exercises simulation preparation, a short Reference-platform run,
 minimization, checkpoint/State continuation, TPR migration, trajectory analysis,

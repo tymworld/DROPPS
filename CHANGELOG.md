@@ -27,6 +27,8 @@ full 0.5.0b4 feature set and preserves the earlier public runtime improvements.
   retries, fractional box multipliers and stricter malformed-input validation.
 - Minimization-only execution and accurate methods reports for that mode.
 - Fractional contact times and Python 3.9 RMSF option exclusivity.
+- XTC concatenation and restart truncation for small uncompressed systems,
+  plus concatenation of segments with different compression precisions.
 - Clean source staging for release builds, wheel RECORD integrity checks and
   wheel/source runtime-payload comparison.
 

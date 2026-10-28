@@ -18,6 +18,7 @@ Updated 2026-10-28. This release integrates the complete local 0.5.0b4 developme
 - Mesh box type, fractional box multipliers, topology consistency, cutoffs and selection bounds are validated.
 - Minimization-only runs are supported and described accurately by `report-methods`.
 - Fractional contact-analysis times are accepted. RMSF grouping options remain mutually exclusive on Python 3.9.
+- XTC concatenation and restart truncation handle small uncompressed systems; mixed segment precisions use the finest input precision.
 - Release builds use a clean staging tree, preventing NAS/macOS metadata from entering source archives. Wheel RECORD, wheel/sdist runtime equality and SHA-256 checks are enforced.
 
 ## Validation and traceability
