@@ -9,7 +9,7 @@ import numpy as np
 from dropps.analysis.density import _frame_windows
 from dropps.fileio.itp_reader import ITPTopology, read_itp, write_itp
 from dropps.fileio.pdb_reader import write_pdb
-from dropps.fileio.xpm_reader import write_xpm
+from dropps.fileio.xpm_reader import write_discrete_xpm, write_xpm
 from dropps.fileio.xvg_reader import read_xvg
 from dropps.share.build_system import _build_exclusion_pairs
 
@@ -108,6 +108,29 @@ class FileIoRegressionTests(unittest.TestCase):
         self.assertEqual(quoted_lines[0], '"2 2 64 1",')
         self.assertEqual(len(quoted_lines), 1 + 64 + 2)
 
+    def test_write_discrete_xpm_preserves_states_axes_and_gromacs_row_order(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "states.xpm"
+            write_discrete_xpm(
+                np.asarray([["C", "H"], ["E", "M"]]),
+                path,
+                colors={
+                    "C": "#FFFFFF",
+                    "H": "#3366CC",
+                    "E": "#CC3333",
+                    "M": "#A6A6A6",
+                },
+                labels={"C": "Coil", "H": "Helix", "E": "Strand", "M": "Mixed"},
+                x_axis=[0.0, 1.0],
+                y_axis=[10, 11],
+            )
+            contents = path.read_text(encoding="utf-8")
+
+        self.assertIn('/* type:    "Discrete" */', contents)
+        self.assertIn("/* x-axis:  0 1 */", contents)
+        self.assertIn("/* y-axis:  10 11 */", contents)
+        self.assertLess(contents.index('"EM",'), contents.index('"CH"'))
+
     def test_write_pdb_accepts_blank_chain_id(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             path = Path(temporary_directory) / "blank-chain.pdb"
@@ -142,14 +165,16 @@ class BoundaryAndCompatibilityRegressionTests(unittest.TestCase):
             _frame_windows(0, 4, 2), [(0, 2), (2, 4), (4, 5)]
         )
 
-    def test_all_python_sources_parse_as_python_310(self):
+    def test_all_python_sources_parse_as_python_39(self):
         repository = Path(__file__).resolve().parents[1]
-        for source_path in repository.rglob("*.py"):
-            if source_path.name.startswith("._"):
+        sources = (path for folder in ("dropps", "scripts", "tests", "examples")
+                   for path in (repository / folder).rglob("*.py"))
+        for source_path in sources:
+            if source_path.name.startswith("._") or "backups" in source_path.parts:
                 continue
             with self.subTest(source=str(source_path.relative_to(repository))):
                 source = source_path.read_text(encoding="utf-8")
-                ast.parse(source, filename=str(source_path), feature_version=(3, 10))
+                ast.parse(source, filename=str(source_path), feature_version=(3, 9))
 
 
 if __name__ == "__main__":

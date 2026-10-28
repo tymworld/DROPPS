@@ -1,12 +1,7 @@
-from .addangle import addangle_commands
-from .editconf import editconf_commands
-from .genelastic import genelastic_commands
-from .genmesh import genmesh_commands
-from .help import help_commands
-from .grompp import grompp_commands
-from .mdrun import mdrun_commands
-from .rerun import rerun_commands
-from .pdb2cgps import pdb2dps_commands
-from .modifyres import modifyres_commands
-from .trjconv import trjconv_commands
-from .gsd2xtc import gsd2xtc_commands
+"""Model-building, conversion, and simulation command modules.
+
+Command registration is intentionally centralized in
+``dropps.share.all_commands``.  Keeping this package initializer lightweight
+allows individual command modules and their tests to be imported without
+loading every scientific runtime dependency.
+"""

@@ -23,6 +23,7 @@ class OutputPaths:
     log: str
     energy: str
     trajectory: str
+    warming_trajectory: str
     checkpoint: str
     final_structure: str
     stress: str
@@ -111,6 +112,7 @@ def resolve_output_paths(
         trajectory=(
             _optional_path(args, "trajectory_output") or prefix + ".xtc"
         ),
+        warming_trajectory=prefix + ".warming.xtc",
         checkpoint=(
             _optional_path(args, "checkpoint_output") or prefix + ".chk"
         ),

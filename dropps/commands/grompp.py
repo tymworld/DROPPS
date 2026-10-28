@@ -3,7 +3,7 @@
 
 import os
 import sys
-import pickle
+from pathlib import Path
 
 import numpy as np
 
@@ -18,6 +18,35 @@ from dropps.share.parameters import getparameter
 from dropps.share.build_system import build_system
 
 from dropps.fileio.pdb_reader import read_pdb, write_pdb, phrase_pdb_atoms
+from dropps.fileio.tpr_reader import write_tpr
+
+
+def _source_files(args):
+    """Collect the primary inputs and ITP files referenced by the TOP file."""
+
+    sources = {
+        "structure": args.structure,
+        "topology": args.topology,
+        "parameters": args.parameter,
+    }
+    top_path = Path(args.topology).resolve()
+    current_section = None
+    itp_index = 0
+    for raw_line in top_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.split(";", 1)[0].split("#", 1)[0].strip()
+        if not line:
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            current_section = line[1:-1].strip().lower()
+            continue
+        if current_section != "itp files":
+            continue
+        itp_path = Path(line.split()[0])
+        if not itp_path.is_absolute():
+            itp_path = top_path.parent / itp_path
+        sources[f"itp-{itp_index:04d}"] = itp_path
+        itp_index += 1
+    return sources
 
 def grompp(args):
 
@@ -27,7 +56,9 @@ def grompp(args):
         output_tpr = args.output
 
     parameters = getparameter(args.parameter)
-    mdsystem, mdtopology, positions, ITP_Topology_list = build_system(args.structure, args.topology, getparameter(args.parameter))
+    mdsystem, mdtopology, positions, ITP_Topology_list = build_system(
+        args.structure, args.topology, parameters
+    )
 
     atoms_pdb_raw,box_raw = read_pdb(args.structure)
     PDB_raw = phrase_pdb_atoms(atoms_pdb_raw,box_raw)
@@ -41,10 +72,16 @@ def grompp(args):
         "ITP_list": ITP_Topology_list
     }
 
-    with open(output_tpr, "wb") as f:
-        pickle.dump(runtime_files, f)
+    manifest = write_tpr(
+        output_tpr,
+        runtime_files,
+        sources=_source_files(args),
+    )
 
-    print(f"## Write run time files to {output_tpr}.")
+    print(
+        f"## Wrote portable TPR v{manifest['format_version']} to {output_tpr} "
+        f"(run ID {manifest['run_id'][:12]})."
+    )
 
 prog = "grompp"
 desc = "Build a DROPPS run-input file from structure, topology, and simulation parameters."

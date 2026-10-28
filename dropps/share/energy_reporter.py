@@ -16,7 +16,10 @@ import numpy as np
 from openmm import unit
 
 from dropps.share.openmm_energy import clone_energy_system, create_energy_context
-from dropps.share.stress_tensor_reporter import pressure_tensor
+from dropps.share.stress_tensor_reporter import (
+    pressure_tensor,
+    synchronized_velocities,
+)
 
 
 EDR_MAGIC = "# DROPPS EDR CSV"
@@ -90,6 +93,9 @@ DEFAULT_ENERGY_FIELDS = (
 
 _ENERGY_VALUE_FIELDS = frozenset(
     ("potentialEnergy", "kineticEnergy", "totalEnergy", "temperature")
+)
+_KINETIC_VALUE_FIELDS = frozenset(
+    ("kineticEnergy", "totalEnergy", "temperature")
 )
 _DALTON_PER_NM3_TO_G_PER_ML = 0.00166053906660
 _R_KJ_PER_MOL_K = unit.MOLAR_GAS_CONSTANT_R.value_in_unit(
@@ -338,6 +344,7 @@ class EnergyReporter:
         self._masses = None
         self._total_mass_dalton = None
         self._degrees_of_freedom = None
+        self._constraints = ()
         self._pressure_context = None
         self._pressure_integrator = None
 
@@ -349,7 +356,17 @@ class EnergyReporter:
         steps = self._report_interval - simulation.currentStep % self._report_interval
         needs_pressure = self.records_pressure
         needs_energy = bool(_ENERGY_VALUE_FIELDS.intersection(self.fields))
-        return steps, needs_pressure, needs_pressure, False, needs_energy
+        needs_kinetic = bool(_KINETIC_VALUE_FIELDS.intersection(self.fields))
+        needs_positions = needs_pressure or (
+            needs_kinetic and simulation.system.getNumConstraints() > 0
+        )
+        return (
+            steps,
+            needs_positions,
+            needs_pressure or needs_kinetic,
+            needs_pressure or needs_kinetic,
+            needs_energy,
+        )
 
     def _initialize(self, simulation):
         self._masses = np.asarray(
@@ -360,6 +377,10 @@ class EnergyReporter:
             dtype=float,
         )
         self._total_mass_dalton = float(np.sum(self._masses))
+        self._constraints = tuple(
+            simulation.system.getConstraintParameters(index)[:2]
+            for index in range(simulation.system.getNumConstraints())
+        )
         if "temperature" in self.fields:
             self._degrees_of_freedom = int(3 * np.count_nonzero(self._masses > 0.0))
             for constraint_index in range(simulation.system.getNumConstraints()):
@@ -407,6 +428,7 @@ class EnergyReporter:
         metadata = {
             "production_temperature_K": self._temperature,
             "pressure_coupling": self._pressure_coupling,
+            "kinetic_method": "position-synchronized-leapfrog-velocity",
             **pressure_metadata,
         }
         self._writer = EDRWriter(
@@ -436,11 +458,38 @@ class EnergyReporter:
             "volume": volume,
             "density": self._total_mass_dalton * _DALTON_PER_NM3_TO_G_PER_ML / volume,
         }
+        synchronized = None
+        if _KINETIC_VALUE_FIELDS.intersection(self.fields) or self.records_pressure:
+            velocities = state.getVelocities(asNumpy=True).value_in_unit(
+                unit.nanometer / unit.picosecond
+            )
+            forces = state.getForces(asNumpy=True).value_in_unit(
+                unit.kilojoule_per_mole / unit.nanometer
+            )
+            positions = None
+            if self.records_pressure or self._constraints:
+                positions = state.getPositions(asNumpy=True).value_in_unit(
+                    unit.nanometer
+                )
+            synchronized = synchronized_velocities(
+                self._masses,
+                velocities,
+                forces,
+                simulation.integrator.getStepSize().value_in_unit(unit.picosecond),
+                positions_nm=positions,
+                box_vectors_nm=box,
+                constraints=self._constraints,
+            )
+
         if _ENERGY_VALUE_FIELDS.intersection(self.fields):
             potential = state.getPotentialEnergy().value_in_unit(
                 unit.kilojoule_per_mole
             )
-            kinetic = state.getKineticEnergy().value_in_unit(unit.kilojoule_per_mole)
+            kinetic = (
+                0.5 * np.einsum("i,ia,ia->", self._masses, synchronized, synchronized)
+                if synchronized is not None
+                else state.getKineticEnergy().value_in_unit(unit.kilojoule_per_mole)
+            )
             values.update(
                 {
                     "potentialEnergy": potential,
@@ -454,14 +503,11 @@ class EnergyReporter:
                 )
         if self.records_pressure:
             positions = state.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
-            velocities = state.getVelocities(asNumpy=True).value_in_unit(
-                unit.nanometer / unit.picosecond
-            )
             tensor = pressure_tensor(
                 self._pressure_context,
                 self._masses,
                 positions,
-                velocities,
+                synchronized,
                 box,
                 strain=self._stress_strain,
             )

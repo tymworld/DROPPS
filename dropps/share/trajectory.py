@@ -1,11 +1,11 @@
 import MDAnalysis as mda
 import numpy as np
-from openmm.unit import nanometer, picosecond, nanosecond
+from openmm.unit import angstrom, nanometer, picosecond
 import os
 
 from dropps.fileio.tpr_reader import read_tpr
 from dropps.share.indexing import indexGroups
-from tqdm import tqdm
+from dropps.share.time_selection import select_time_indices
 
 from os.path import splitext
 
@@ -25,7 +25,7 @@ class trajectory_class():
         print(f"## Loaded topology from {tpr_path}.")
 
         positions_array = np.array(
-            [[coor.value_in_unit(nanometer) for coor in atom]for atom in self.tpr.positions])
+            [[coor.value_in_unit(angstrom) for coor in atom]for atom in self.tpr.positions])
                
         self.Universe = mda.Universe(self.tpr.mdtopology, positions_array)
 
@@ -61,22 +61,23 @@ class trajectory_class():
 
             file_extention = splitext(trajectory_path)[1].lower()
 
-            if file_extention == ".xtc":
-                print(f"Loading xtc trajectory file {trajectory_path} ...")
+            if file_extention in {".xtc", ".pdb"}:
+                print(f"Loading {file_extention[1:].upper()} trajectory file {trajectory_path} ...")
                 try:
                     self.Universe.load_new(trajectory_path, in_memory=False)
                 except Exception as exc:
                     raise RuntimeError(
-                        f"Failed to read XTC trajectory '{trajectory_path}'. "
+                        f"Failed to read trajectory '{trajectory_path}'. "
                         "Please check whether the file is complete/corrupted and "
                         "compatible with the provided topology."
                     ) from exc
                 print(f"## Loaded trajectory file {trajectory_path} into Universe.")
-                print(f"## Assuming trajectory file in unit angstrom")
 
             else:
-                print(f"## ERROR: Unknown file extension of {trajectory_path}.")
-                quit()
+                raise ValueError(
+                    f"Unsupported trajectory extension '{file_extention}'; "
+                    "DROPPS trjconv accepts .xtc and .pdb input."
+                )
         
         # We generate information for each atoms.
         self.id2charge = charges
@@ -85,7 +86,7 @@ class trajectory_class():
         chain_length_list = [len(itp.atoms) for itp in self.tpr.itp_list]
         self.id2chainID = [i for i, length in enumerate(chain_length_list) for _ in range(length)]
         self.id2resID = [atom.residueid for itp in self.tpr.itp_list for atom in itp.atoms]
-        print(f"## The next line will contains the first frame of the trajectory witin the Universe for sanity check.")
+        print("## The next line contains the first trajectory frame for a sanity check.")
         print(f"## {self.Universe.trajectory[0]}")
     
     def get_chainID(self, index):
@@ -128,34 +129,77 @@ class trajectory_class():
     def time_step(self):
         return self.Universe.trajectory.dt * picosecond
     
-    def time2frame(self, time_start = None, time_end = None, time_step = None):
+    def time2frame(self, time_start=None, time_end=None, time_step=None):
+        """Convert a physical-time window to an inclusive constant-stride slice.
 
-        start_time = time_start * nanosecond if time_start is not None else self.time_init()
-        end_time = time_end * nanosecond if time_end is not None else self.time_end()
+        Bounds are selected from the trajectory's actual timestamps.  The
+        analysis API represents sampling as one frame stride, so an explicit
+        physical interval additionally requires uniformly spaced timestamps in
+        the selected window.
+        """
 
-        if time_step is None:
-            interval_time = self.time_step()
+        frame_times_ps = np.asarray(
+            [float(timestep.time) for timestep in self.Universe.trajectory],
+            dtype=np.float64,
+        )
+        selection = select_time_indices(
+            frame_times_ps,
+            start_time=time_start,
+            end_time=time_end,
+            time_unit="ns",
+        )
+        start_frame = int(selection.indices[0])
+        end_frame = int(selection.indices[-1])
+        interval_frame = 1
+
+        if time_step is not None:
+            interval_ps = float(time_step) * 1000.0
+            if not np.isfinite(interval_ps) or interval_ps <= 0.0:
+                raise ValueError("Analysis time interval must be greater than zero.")
+
+            selected_times = frame_times_ps[start_frame : end_frame + 1]
+            if selected_times.size > 1:
+                frame_intervals = np.diff(selected_times)
+                if np.any(frame_intervals <= 0.0):
+                    raise ValueError(
+                        "A fixed analysis interval requires strictly increasing "
+                        "trajectory timestamps."
+                    )
+                trajectory_interval = float(np.median(frame_intervals))
+                tolerance = max(
+                    np.finfo(np.float32).eps
+                    * max(float(np.max(np.abs(selected_times))), 1.0)
+                    * 8.0,
+                    abs(trajectory_interval) * 1.0e-6,
+                )
+                if not np.allclose(
+                    frame_intervals,
+                    trajectory_interval,
+                    rtol=1.0e-6,
+                    atol=tolerance,
+                ):
+                    raise ValueError(
+                        "A fixed analysis interval cannot be represented by one "
+                        "frame stride because trajectory timestamps are nonuniform."
+                    )
+                interval_frame = max(
+                    1,
+                    int(np.floor(interval_ps / trajectory_interval + 0.5)),
+                )
+            interval_time = interval_ps * picosecond
         else:
-            interval_time = time_step * nanosecond
+            interval_time = "every saved frame"
 
-        if start_time < self.time_init() or end_time > self.time_end():
-            print(f"ERROR: Trajectory containing {self.time_init()} - {self.time_end()} "
-                + f"while you demanding {start_time} - {end_time}.")
-            print(f"YOU MUST BE KIDDING ME.")
-            quit()
-
-        if end_time < start_time:
-            raise ValueError(
-                f"End time {end_time} must not be earlier than start time {start_time}."
-            )
-
-        start_frame = int((start_time - self.time_init()) / self.time_step())
-        end_frame = int((end_time - self.time_init()) / self.time_step())
-        interval_frame = int(interval_time / self.time_step())
-        interval_frame = interval_frame if interval_frame > 1 else 1
-
-        print(f"## Will use time {start_time} to {end_time} with interval of {interval_time}.")
-        print(f"## Will use frame {start_frame} to {end_frame} with interval of {interval_frame}.") 
+        actual_start = frame_times_ps[start_frame] * picosecond
+        actual_end = frame_times_ps[end_frame] * picosecond
+        print(
+            f"## Selected actual trajectory time {actual_start} to {actual_end} "
+            f"with interval {interval_time}."
+        )
+        print(
+            f"## Will use frame {start_frame} to {end_frame} with interval "
+            f"of {interval_frame}."
+        )
 
         return start_frame, end_frame, interval_frame
     
@@ -199,6 +243,3 @@ class trajectory_class():
 
     
         
-
-
-

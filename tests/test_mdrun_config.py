@@ -110,6 +110,7 @@ class MdrunConfigurationTests(unittest.TestCase):
         self.assertEqual(paths.log, "run.log")
         self.assertEqual(paths.energy, "run.edr")
         self.assertEqual(paths.trajectory, "custom.xtc")
+        self.assertEqual(paths.warming_trajectory, "run.warming.xtc")
         self.assertEqual(paths.checkpoint, "custom.chk")
         self.assertEqual(paths.final_structure, "custom.pdb")
         self.assertEqual(paths.stress, "custom.stress.xvg")

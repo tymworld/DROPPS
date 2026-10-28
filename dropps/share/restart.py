@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import tempfile
 
+import openmm
+from openmm import unit
 from openmm.app import XTCFile
 from openmm.app.internal.xtc_utils import get_xtc_nframes
 
@@ -161,6 +165,190 @@ def save_checkpoint_safely(simulation, file):
         raise
 
 
+def _restart_base(path):
+    path = os.fspath(path)
+    for suffix in (".state.xml", ".restart.json", ".chk"):
+        if path.endswith(suffix):
+            return path[: -len(suffix)]
+    return path
+
+
+def portable_state_path(checkpoint_file):
+    """Return the portable State XML path paired with a checkpoint."""
+
+    return _restart_base(checkpoint_file) + ".state.xml"
+
+
+def restart_metadata_path(restart_file):
+    """Return the restart manifest paired with a checkpoint or State XML."""
+
+    return _restart_base(restart_file) + ".restart.json"
+
+
+def native_checkpoint_path(restart_file):
+    """Return the native checkpoint paired with a State XML or manifest."""
+
+    return _restart_base(restart_file) + ".chk"
+
+
+def _file_sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def save_state_safely(simulation, file):
+    """Atomically write an OpenMM portable State XML file."""
+
+    path = os.fspath(file)
+    directory = os.path.dirname(os.path.abspath(path))
+    descriptor, temporary_path = tempfile.mkstemp(
+        prefix=f".{os.path.basename(path)}.", suffix=".tmp", dir=directory
+    )
+    os.close(descriptor)
+    try:
+        simulation.saveState(temporary_path)
+        os.replace(temporary_path, path)
+    except BaseException:
+        if os.path.exists(temporary_path):
+            os.unlink(temporary_path)
+        raise
+
+
+def save_portable_restart_safely(simulation, checkpoint_file, metadata=None):
+    """Write the portable State and its manifest for a native checkpoint."""
+
+    checkpoint_file = os.fspath(checkpoint_file)
+    state_file = portable_state_path(checkpoint_file)
+    manifest_file = restart_metadata_path(checkpoint_file)
+    save_state_safely(simulation, state_file)
+
+    context = simulation.context
+    platform_object = context.getPlatform()
+    properties = {}
+    for name in platform_object.getPropertyNames():
+        try:
+            properties[name] = platform_object.getPropertyValue(context, name)
+        except Exception:
+            continue
+
+    manifest = dict(metadata or {})
+    manifest.update(
+        {
+            "format": "dropps-restart",
+            "format_version": 1,
+            "step": int(simulation.currentStep),
+            "time_ps": float(context.getTime().value_in_unit(unit.picosecond)),
+            "openmm_version": openmm.__version__,
+            "platform": platform_object.getName(),
+            "platform_properties": properties,
+            "checkpoint": os.path.basename(checkpoint_file),
+            "checkpoint_sha256": (
+                _file_sha256(checkpoint_file)
+                if os.path.isfile(checkpoint_file)
+                else None
+            ),
+            "state": os.path.basename(state_file),
+            "state_sha256": _file_sha256(state_file),
+            "exact_continuation": False,
+        }
+    )
+    _atomic_write_json(manifest_file, manifest)
+    return state_file, manifest_file
+
+
+def load_restart_metadata(restart_file):
+    """Load a restart manifest, returning ``None`` when it does not exist."""
+
+    path = restart_metadata_path(restart_file)
+    if not os.path.isfile(path):
+        return None
+    with open(path, "r", encoding="utf-8") as stream:
+        manifest = json.load(stream)
+    if manifest.get("format") != "dropps-restart":
+        raise ValueError(f"Invalid DROPPS restart manifest: {path}")
+    if int(manifest.get("format_version", 0)) != 1:
+        raise ValueError(
+            f"Unsupported restart manifest version in {path}: "
+            f"{manifest.get('format_version')}."
+        )
+    return manifest
+
+
+def _validate_restart_system_id(manifest, expected_system_id, restart_file):
+    if expected_system_id is None:
+        return
+    restart_system_id = manifest.get("tpr_system_id")
+    if not restart_system_id:
+        raise ValueError(
+            f"Restart manifest for {restart_file} does not identify its molecular "
+            "system."
+        )
+    if expected_system_id != restart_system_id:
+        raise ValueError(
+            "Restart was created for a different molecular system "
+            f"(restart {restart_system_id}, input {expected_system_id})."
+        )
+
+
+def _validate_restart_checksum(file, manifest, checksum_key, description):
+    expected_checksum = manifest.get(checksum_key)
+    if not expected_checksum:
+        raise ValueError(
+            f"Restart manifest does not contain a {description} checksum: {file}"
+        )
+    if _file_sha256(file) != expected_checksum:
+        raise ValueError(f"{description.capitalize()} checksum failed: {file}")
+
+
+def validate_native_restart(
+    checkpoint_file,
+    expected_system_id=None,
+    manifest=None,
+):
+    """Validate a native checkpoint against its paired manifest when present.
+
+    Native checkpoints created before restart manifests were introduced remain
+    loadable.  Once a manifest exists, however, its checkpoint hash and system
+    identity are mandatory so an interrupted multi-file update cannot combine
+    state from different save generations.
+    """
+
+    if manifest is None:
+        manifest = load_restart_metadata(checkpoint_file)
+    if manifest is None:
+        return None
+    _validate_restart_checksum(
+        checkpoint_file,
+        manifest,
+        "checkpoint_sha256",
+        "native checkpoint",
+    )
+    _validate_restart_system_id(manifest, expected_system_id, checkpoint_file)
+    return manifest
+
+
+def validate_portable_restart(state_file, expected_system_id=None):
+    """Validate a portable State against its checksum and TPR identity."""
+
+    manifest = load_restart_metadata(state_file)
+    if manifest is None:
+        raise FileNotFoundError(
+            "Portable State requires its paired restart manifest: "
+            f"{restart_metadata_path(state_file)}"
+        )
+    _validate_restart_checksum(
+        state_file,
+        manifest,
+        "state_sha256",
+        "portable State",
+    )
+    _validate_restart_system_id(manifest, expected_system_id, state_file)
+    return manifest
+
+
 def _atomic_write_text(path, lines):
     directory = os.path.dirname(os.path.abspath(path))
     descriptor, temporary_path = tempfile.mkstemp(
@@ -174,3 +362,8 @@ def _atomic_write_text(path, lines):
         if os.path.exists(temporary_path):
             os.unlink(temporary_path)
         raise
+
+
+def _atomic_write_json(path, value):
+    text = json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    _atomic_write_text(path, [text])

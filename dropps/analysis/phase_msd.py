@@ -23,7 +23,10 @@ from dropps.analysis.coexistence_core import (
     centering_schedule,
     fit_slab_profile_blocks,
     histogram_density,
-    periodic_center_fraction,
+)
+from dropps.analysis.density_core import (
+    DEFAULT_DENSITY_BIN_WIDTH_NM,
+    threshold_profile_center,
 )
 from dropps.analysis.exchange import _build_molecules, _select_groups
 from dropps.analysis.exchange_core import (
@@ -102,6 +105,7 @@ def _write_profile_xvg(
         )
         handle.write(
             f"# interface_threshold={metadata['interface_threshold']:.12g} "
+            f"dense_phase_threshold={metadata['dense_phase_threshold']:.12g} "
             f"dense_cutoff_nm={dense_cutoff_nm:.12g} "
             f"dilute_cutoff_nm={dilute_cutoff_nm:.12g} "
             f"fit_r_squared={fit['r_squared']:.12g}\n"
@@ -134,6 +138,7 @@ def _write_msd_xvg(path, results, metadata):
             f"# dimensions={metadata['msd_type']} axis={metadata['axis']} "
             f"center_mode={metadata['center_mode']} "
             f"interface_threshold={metadata['interface_threshold']:.12g} "
+            f"dense_phase_threshold={metadata['dense_phase_threshold']:.12g} "
             f"min_particles={metadata['min_particles']} "
             f"blocks={metadata['blocks']}\n"
         )
@@ -295,8 +300,17 @@ def getargs_phase_msd(argv):
     parser.add_argument(
         "--bin-width",
         type=float,
-        default=0.2,
-        help="Requested reference density-bin width, in nm.",
+        default=DEFAULT_DENSITY_BIN_WIDTH_NM,
+        help="Requested reference density-bin width, in nm; shared with density.",
+    )
+    parser.add_argument(
+        "--dense-phase-threshold",
+        type=float,
+        default=0.5,
+        help=(
+            "Dense-phase threshold as a fraction of the maximum reference "
+            "density; shared with density and coexistence."
+        ),
     )
     parser.add_argument(
         "--interface-threshold",
@@ -333,6 +347,11 @@ def phase_msd(args):
         raise ValueError("Bin width must be positive and finite.")
     if args.blocks <= 0:
         raise ValueError("Number of blocks must be positive.")
+    if (
+        not np.isfinite(args.dense_phase_threshold)
+        or not 0.0 < args.dense_phase_threshold < 1.0
+    ):
+        raise ValueError("Dense-phase threshold must be finite and between 0 and 1.")
     if args.min_particles <= 0:
         raise ValueError("Minimum particles must be positive.")
     if (
@@ -365,6 +384,7 @@ def phase_msd(args):
         args.start_time,
         args.end_time,
         args.delta_time,
+        require_uniform=True,
     )
     first_timestep = analyzed_trajectory[frame_indices[0]]
     _, first_lengths_nm, _ = _box_geometry_nm(first_timestep)
@@ -384,11 +404,18 @@ def phase_msd(args):
         frame_center_orders = []
         for frame_index in tqdm(frame_indices, desc="## Locating dense slab"):
             timestep = analyzed_trajectory[frame_index]
-            box_nm, _, _ = _box_geometry_nm(timestep)
+            box_nm, _, volume_nm3 = _box_geometry_nm(timestep)
             positions_nm = np.asarray(timestep.positions, dtype=float) * ANGSTROM_TO_NM
             fractional = _fractional_positions(positions_nm, box_nm)
-            center, order = periodic_center_fraction(
-                fractional[reference_indices, axis_index], reference_weights
+            reference_profile = histogram_density(
+                fractional[reference_indices, axis_index],
+                reference_weights,
+                volume_nm3,
+                bins,
+            )
+            center, order = threshold_profile_center(
+                reference_profile,
+                args.dense_phase_threshold,
             )
             frame_centers.append(center)
             frame_center_orders.append(order)
@@ -552,6 +579,7 @@ def phase_msd(args):
         "center_mode": args.center_mode,
         "centering_groups": schedule["groups"],
         "interface_threshold": args.interface_threshold,
+        "dense_phase_threshold": args.dense_phase_threshold,
         "msd_type": args.msd_type,
         "min_particles": args.min_particles,
         "blocks": args.blocks,

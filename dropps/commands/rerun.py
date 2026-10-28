@@ -18,6 +18,7 @@ from dropps.share.openmm_energy import (
     potential_energy_kj_per_mol,
 )
 from dropps.share.stress_tensor_reporter import configurational_pressure_tensor
+from dropps.share.time_selection import select_time_indices
 from dropps.share.trajectory import trajectory_class
 
 
@@ -49,29 +50,13 @@ _DEFAULT_RERUN_FIELDS = (
 
 def _select_frame_indices(trajectory, start_ps, end_ps, delta_ps):
     times = np.asarray([float(frame.time) for frame in trajectory], dtype=float)
-    if len(times) == 0:
-        raise ValueError("Trajectory contains no frames.")
-    if start_ps is not None and end_ps is not None and end_ps < start_ps:
-        raise ValueError("End time must not precede start time.")
-    selected = np.ones(len(times), dtype=bool)
-    if start_ps is not None:
-        selected &= times >= float(start_ps)
-    if end_ps is not None:
-        selected &= times <= float(end_ps)
-    indices = np.flatnonzero(selected)
-    if delta_ps is not None:
-        if not np.isfinite(delta_ps) or delta_ps <= 0.0:
-            raise ValueError("Frame interval must be positive and finite.")
-        thinned = []
-        next_time = None
-        for index in indices:
-            if next_time is None or times[index] >= next_time - 1.0e-9:
-                thinned.append(index)
-                next_time = times[index] + float(delta_ps)
-        indices = np.asarray(thinned, dtype=int)
-    if len(indices) == 0:
-        raise ValueError("No trajectory frames fall within the requested time window.")
-    return indices
+    return select_time_indices(
+        times,
+        start_time=start_ps,
+        end_time=end_ps,
+        delta_time=delta_ps,
+        time_unit="ps",
+    ).indices
 
 
 def rerun(args):

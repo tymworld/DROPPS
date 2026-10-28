@@ -16,12 +16,109 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 
 from MDAnalysis.lib.nsgrid import FastNS
+from MDAnalysis.lib.distances import apply_PBC, minimize_vectors
 
 
 import numpy as np
 
 prog = "assembly"
 desc = "Analyze the formation, size, composition, and shape of molecular assemblies."
+
+
+def _cluster_members(pairs, labels, n_groups, threshold):
+    """Build sorted connected components, including singleton-only frames."""
+    counts = np.zeros((n_groups, n_groups), dtype=np.int64)
+    pairs = np.asarray(pairs, dtype=np.int64).reshape(-1, 2)
+    if pairs.size:
+        gi = labels[pairs[:, 0]]
+        gj = labels[pairs[:, 1]]
+        key = gi.astype(np.int64) * n_groups + gj.astype(np.int64)
+        one_way = np.bincount(
+            key,
+            minlength=n_groups * n_groups,
+        ).reshape(n_groups, n_groups)
+        counts = one_way + one_way.T
+        np.fill_diagonal(counts, 0)
+
+    graph = csr_matrix(counts >= threshold)
+    n_components, component_labels = connected_components(
+        graph,
+        directed=False,
+        return_labels=True,
+    )
+    members = [[] for _ in range(n_components)]
+    for group_id, component_id in enumerate(component_labels):
+        members[component_id].append(group_id)
+    members.sort(key=len, reverse=True)
+    return members
+
+
+def _weighted_cluster_fraction(members, selected_group_ids, minimum_size):
+    """Return the molecule fraction pooled across all qualifying clusters."""
+    selected = set(selected_group_ids)
+    qualifying = [component for component in members if len(component) >= minimum_size]
+    denominator = sum(len(component) for component in qualifying)
+    if denominator == 0:
+        return 0.0
+    numerator = sum(
+        sum(group_id in selected for group_id in component)
+        for component in qualifying
+    )
+    return numerator / denominator
+
+
+def _contact_image_shifts(positions, pairs, labels, dimensions):
+    """Return whole-group image shifts inferred from minimum-image contacts."""
+    pairs = np.asarray(pairs, dtype=np.int64).reshape(-1, 2)
+    if not pairs.size:
+        return {}
+    raw_vectors = positions[pairs[:, 1]] - positions[pairs[:, 0]]
+    image_shifts = minimize_vectors(raw_vectors, dimensions) - raw_vectors
+    shifts = {}
+    for pair, shift in zip(pairs, image_shifts):
+        source = int(labels[pair[0]])
+        target = int(labels[pair[1]])
+        if source == target:
+            continue
+        shifts.setdefault((source, target), np.asarray(shift, dtype=float))
+        shifts.setdefault((target, source), -np.asarray(shift, dtype=float))
+    return shifts
+
+
+def _component_translations(component, image_shifts):
+    """Propagate periodic image translations over one connected component."""
+    component = list(component)
+    translations = {component[0]: np.zeros(3, dtype=float)}
+    pending = [component[0]]
+    component_set = set(component)
+    while pending:
+        source = pending.pop()
+        for (edge_source, target), shift in image_shifts.items():
+            if edge_source != source or target not in component_set or target in translations:
+                continue
+            translations[target] = translations[source] + shift
+            pending.append(target)
+    if len(translations) != len(component):
+        raise ValueError("could not construct a consistent periodic image for a cluster")
+    return translations
+
+
+def _component_geometry(groups, component, image_shifts=None):
+    translations = (
+        _component_translations(component, image_shifts)
+        if image_shifts is not None
+        else {group_id: np.zeros(3, dtype=float) for group_id in component}
+    )
+    positions = np.concatenate(
+        [groups[group_id].positions + translations[group_id] for group_id in component],
+        axis=0,
+    )
+    masses = np.concatenate([groups[group_id].masses for group_id in component])
+    return rg_tensor_principal_components(positions, masses)
+
+
+def _mean_or_nan(values):
+    return float(np.mean(values)) if values else float("nan")
 
 def rg_tensor_principal_components(pos, masses=None, box=None):
     """
@@ -151,13 +248,13 @@ def getargs_assembly(argv):
     parser.add_argument('--threashold', dest='threshold', type=int,
                         default=SUPPRESS, help=SUPPRESS)
     
-    parser.add_argument('-b', '--start-time', type=int,
+    parser.add_argument('-b', '--start-time', type=float,
                         help="First trajectory time to analyze, in ns.")
 
-    parser.add_argument('-e', '--end-time', type=int,
+    parser.add_argument('-e', '--end-time', type=float,
                         help="Last trajectory time to analyze, in ns.")
     
-    parser.add_argument('-dt', '--delta-time', type=int,
+    parser.add_argument('-dt', '--delta-time', type=float,
                         help="Approximate interval between analyzed frames, in ns.")
 
     parser.add_argument('-cn', '--cluster-number', type=str,
@@ -190,6 +287,24 @@ def getargs_assembly(argv):
 
 
 def assembly(args):
+
+    outputs = (
+        args.cluster_number,
+        args.cluster_size,
+        args.cluster_size_distribution,
+        args.molecule_fraction,
+        args.radius_gyration_largest,
+        args.asphericity,
+        args.ellipticity,
+    )
+    if all(output is None for output in outputs):
+        raise ValueError("at least one assembly output must be requested")
+    if not np.isfinite(args.cutoff) or args.cutoff <= 0.0:
+        raise ValueError("contact cutoff must be a positive finite number")
+    if args.threshold <= 0:
+        raise ValueError("contact threshold must be positive")
+    if args.molecule_fraction_cutoff <= 0:
+        raise ValueError("molecule-fraction cutoff must be positive")
     
     # load trajectory into memory
 
@@ -238,17 +353,32 @@ def assembly(args):
 
     print(f"## We now test reference and selection chains.")
     print(f"## There are {len(reference_chains)} reference chains.")
+    if not reference_chains:
+        raise ValueError("reference group does not contain any chains")
     reference_chain_length = [len(chain) for chain in reference_chains]
     if len(set(reference_chain_length)) != 1:
-        print("## Reference chains have different lengths: ", set(reference_chain_length))
+        raise ValueError(
+            f"reference chains have different lengths: {set(reference_chain_length)}"
+        )
     else:
         print(f"## Each reference chain has length {reference_chain_length[0]}.")
     
+    reference_chain_lookup = {
+        tuple(int(index) for index in chain): chain_id
+        for chain_id, chain in enumerate(reference_chains)
+    }
+    selection_group_chain_indices = []
     for i, selection_chains in enumerate(selection_chains_list):
+        selected_ids = []
         for sel_chain in selection_chains:
-            if sel_chain not in reference_chains:
-                print(f"## WARNING: Selection group {selection_group_names[i]} has chain not in reference chains.")
-                quit()
+            key = tuple(int(index) for index in sel_chain)
+            if key not in reference_chain_lookup:
+                raise ValueError(
+                    f"selection group {selection_group_names[i]} contains a chain "
+                    "that is absent from the reference group"
+                )
+            selected_ids.append(reference_chain_lookup[key])
+        selection_group_chain_indices.append(selected_ids)
 
     print(f"## Test pass, all selection chains are contained in reference chains.")
 
@@ -287,48 +417,25 @@ def assembly(args):
 
     for ts in tqdm(trajectory.Universe.trajectory[start_frame:end_frame + 1:interval_frame]):
 
-        time_list.append(trajectory.Universe.trajectory.time / 1000)
+        time_list.append(ts.time / 1000)
 
         # We now build contact map between reference chains
 
-        pos = all_atoms.positions
+        pos = np.asarray(all_atoms.positions, dtype=float)
 
         box = ts.dimensions
-        ns = FastNS(args.cutoff * 10.0, pos, box=box, pbc=args.treat_pbc)
+        search_pos = apply_PBC(pos, box) if args.treat_pbc else pos
+        ns = FastNS(args.cutoff * 10.0, search_pos, box=box, pbc=args.treat_pbc)
         
         pairs = ns.self_search().get_pairs()
-
-        if pairs.size == 0:
-            continue
-
-        gi = labels[pairs[:, 0]]
-        gj = labels[pairs[:, 1]]
-
-        # Bin pair counts into matrix quickly using a single bincount
-        key = gi.astype(np.int64) * n_groups + gj.astype(np.int64)
-        counts = np.bincount(key, minlength=n_groups * n_groups).reshape(n_groups, n_groups)
-
-        # Because self_search returns each pair once (i<j), make symmetric if desired
-        # For inter-group contacts, symmetry is usually what you want:
-        mats = counts + counts.T
-        np.fill_diagonal(mats, 0)
-
-        if not np.allclose(mats, mats.T):
-            raise ValueError("Contact matrix is not symmetric.")
-
-        # We now determine clusters
-
-        adjancy = (mats >= args.threshold)
-        graph = csr_matrix(adjancy)
-        n_components, new_labels = connected_components(graph, directed=False, return_labels=True)
-
-        members = [[] for _ in range(n_components)]
-        for idx, lab in enumerate(new_labels):
-            members[lab].append(idx)
-
-        # Sort components by size (desc), stable by label otherwise
-        members.sort(key=len, reverse=True)
+        members = _cluster_members(pairs, labels, n_groups, args.threshold)
+        n_components = len(members)
         sizes = [len(m) for m in members]
+        image_shifts = (
+            _contact_image_shifts(pos, pairs, labels, box)
+            if args.treat_pbc
+            else None
+        )
 
         cluster_number_list.append(n_components)
         largest_size_list.append(sizes[0] if len(sizes) > 0 else 0)
@@ -338,12 +445,8 @@ def assembly(args):
         size_distribution_verbose = []
         for comp_id, comp in enumerate(members):
             comp_dict = {}
-            for sel_id, selection_chains_representatives in enumerate(selection_chains_representatives_list):
-                count = 0
-                for chain_rep in selection_chains_representatives:
-                    chain_idx = reference_chains_representatives.index(chain_rep)
-                    if chain_idx in comp:
-                        count +=1
+            for sel_id, selected_ids in enumerate(selection_group_chain_indices):
+                count = sum(chain_idx in comp for chain_idx in selected_ids)
                 comp_dict[selection_group_names[sel_id]] = count
             size_distribution_verbose.append((len(comp), comp_dict))
         size_distribution_list_verbose.append(size_distribution_verbose)
@@ -352,59 +455,40 @@ def assembly(args):
         #print(size_distribution_verbose)
 
         # We now calculate molecular fractions in large clusters
-        for sel_id, selection_chains_representatives in enumerate(selection_chains_representatives_list):
-            large_cluster_molecular_fraction = 0.0
-            large_cluster_count = 0
-            for comp in members:
-                if len(comp) >= args.molecule_fraction_cutoff:
-                    count = 0
-                    for chain_rep in selection_chains_representatives:
-                        chain_idx = reference_chains_representatives.index(chain_rep)
-                        if chain_idx in comp:
-                            count +=1
-                    fraction = count / len(comp)
-                    large_cluster_molecular_fraction += fraction
-                    large_cluster_count += 1
-            if large_cluster_count > 0:
-                large_cluster_molecular_fraction /= large_cluster_count
-            large_cluster_molecular_fraction_list[sel_id].append(large_cluster_molecular_fraction)
+        for sel_id, selected_ids in enumerate(selection_group_chain_indices):
+            large_cluster_molecular_fraction_list[sel_id].append(
+                _weighted_cluster_fraction(
+                    members,
+                    selected_ids,
+                    args.molecule_fraction_cutoff,
+                )
+            )
         
         # We now calculate radius of gyration of largest cluster
         if args.radius_gyration_largest is not None:
             largest_cluster = members[0]
-            largest_cluster_atom_indices = []
-            for chain_idx in largest_cluster:
-                chain = reference_chains[chain_idx]
-                largest_cluster_atom_indices.extend(chain)
-            largest_cluster_atom_indices = np.asarray(largest_cluster_atom_indices, dtype=np.int64)
-            largest_cluster_atoms = trajectory.Universe.atoms[largest_cluster_atom_indices]
-            pos = largest_cluster_atoms.positions
-            masses = largest_cluster_atoms.masses
-
-            rg, (rg1, rg2, rg3), S, eigvecs = rg_tensor_principal_components(pos, masses, trajectory.Universe.dimensions)
+            rg, (rg1, rg2, rg3), S, eigvecs = _component_geometry(
+                groups,
+                largest_cluster,
+                image_shifts,
+            )
             
             rg_largest_list.append((rg, rg1, rg2, rg3))
         
         if args.asphericity is not None or args.ellipticity is not None:
             # We now calculate asphericity of large clusters
-            largest_cluster = members[0]
             asphericity_list_temp = []
             ellipticity_list_temp = []
             for comp in members:
                 if len(comp) >= args.molecule_fraction_cutoff:
-                    comp_atom_indices = []
-                    for chain_idx in comp:
-                        chain = reference_chains[chain_idx]
-                        comp_atom_indices.extend(chain)
-                    comp_atom_indices = np.asarray(comp_atom_indices, dtype=np.int64)
-                    comp_atoms = trajectory.Universe.atoms[comp_atom_indices]
-                    pos = comp_atoms.positions
-                    masses = comp_atoms.masses
-
-                    rg, (rg1, rg2, rg3), S, eigvecs = rg_tensor_principal_components(pos, masses, trajectory.Universe.dimensions)
+                    rg, (rg1, rg2, rg3), S, eigvecs = _component_geometry(
+                        groups,
+                        comp,
+                        image_shifts,
+                    )
                     
                     asphericity = ((rg1 - rg2)**2 + (rg2 - rg3)**2 + (rg3 - rg1)**2) / (2 * (rg1 + rg2 + rg3)**2)
-                    ellipticity = rg1 / rg3
+                    ellipticity = rg1 / rg3 if rg3 > np.finfo(float).eps else np.nan
                     asphericity_list_temp.append(asphericity)
                     ellipticity_list_temp.append(ellipticity)
 
@@ -466,13 +550,13 @@ def assembly(args):
     if args.asphericity is not None:
         asphericity_filename = validate_extension(args.asphericity, 'xvg')
         with open(asphericity_filename, 'w') as fout:
-            header = "#Time(ns)    Mean    " + "    ".join([f"Cluster{i+1}" for i in range(max(len(a_list) for a_list in asphericity_list))]) + "\n"
+            header = "#Time(ns)    Mean    " + "    ".join([f"Cluster{i+1}" for i in range(max((len(a_list) for a_list in asphericity_list), default=0))]) + "\n"
             fout.write(header)
 
             for i in range(len(time_list)):
                 line = (
                     f"{time_list[i]:.3f}    "
-                    + f"{np.mean(asphericity_list[i]):.6f}    "
+                    + f"{_mean_or_nan(asphericity_list[i]):.6f}    "
                     + "    ".join(f"{v:.6f}" for v in asphericity_list[i])
                     + "\n"
                 )
@@ -481,13 +565,13 @@ def assembly(args):
     if args.ellipticity is not None:
         ellipticity_filename = validate_extension(args.ellipticity, 'xvg')
         with open(ellipticity_filename, 'w') as fout:
-            header = "#Time(ns)    Mean    " + "    ".join([f"Cluster{i+1}" for i in range(max(len(e_list) for e_list in ellipticity_list))]) + "\n"
+            header = "#Time(ns)    Mean    " + "    ".join([f"Cluster{i+1}" for i in range(max((len(e_list) for e_list in ellipticity_list), default=0))]) + "\n"
             fout.write(header)
 
             for i in range(len(time_list)):
                 line = (
                     f"{time_list[i]:.3f}    "
-                    + f"{np.mean(ellipticity_list[i]):.6f}    "
+                    + f"{_mean_or_nan(ellipticity_list[i]):.6f}    "
                     + "    ".join(f"{v:.6f}" for v in ellipticity_list[i])
                     + "\n"
                 )

@@ -108,7 +108,7 @@ def getargs_genelastic(argv):
     parser.add_argument('-o', '--output', type=str, required=True, 
                         help="Output topology file (.itp); the extension is added if omitted.")
 
-    parser.add_argument('-er', '--elastic-residues', type=str, required=True,
+    parser.add_argument('-r', '-er', '--elastic-residues', type=str, required=True,
                         help="Input text file listing one elastic-network bead group per line, using 1-based bead indices.")
 
     parser.add_argument('-ef', '--elastic-force-constant', type=float, default=5000,

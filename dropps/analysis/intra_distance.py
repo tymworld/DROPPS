@@ -5,6 +5,14 @@ from dropps.share.argument_parser import ArgumentParser
 from dropps.share.trajectory import trajectory_class
 from dropps.fileio.filename_control import validate_extension
 from dropps.fileio.xvg_reader import write_xvg
+from dropps.analysis.distance_core import (
+    EndpointPlan,
+    Entity,
+    build_distance_job,
+    dimensions_angstrom_to_nm,
+    iter_distance_blocks,
+    project_endpoint,
+)
 
 from tqdm import tqdm
 import numpy as np
@@ -14,10 +22,8 @@ from Bio import BiopythonDeprecationWarning
 
 warnings.filterwarnings("ignore", category=BiopythonDeprecationWarning)
 
-from MDAnalysis.transformations import unwrap
-
 prog = "idist"
-desc = "Calculate intra-chain distance profiles for one or more bead pairs."
+desc = "Deprecated alias for legacy intra-chain distance profiles."
 
 def getargs_intra_distance(argv):
 
@@ -35,13 +41,13 @@ def getargs_intra_distance(argv):
     parser.add_argument('-sel', '--selection', type=int, nargs='+',
                         help="Index groups containing one bead pair per chain; if omitted, prompt interactively.")
     
-    parser.add_argument('-b', '--start-time', type=int,
+    parser.add_argument('-b', '--start-time', type=float,
                         help="First trajectory time to analyze, in ns.")
 
-    parser.add_argument('-e', '--end-time', type=int,
+    parser.add_argument('-e', '--end-time', type=float,
                         help="Last trajectory time to analyze, in ns.")
 
-    parser.add_argument('-dt', '--delta-time', type=int,
+    parser.add_argument('-dt', '--delta-time', type=float,
                         help="Approximate interval between analyzed frames, in ns.")
     
     parser.add_argument('-pbc', '--treat-pbc', action='store_true', default=False,
@@ -65,6 +71,19 @@ def getargs_intra_distance(argv):
 
 def intra_distance(args):
 
+    print(
+        "## WARNING: 'idist' is deprecated; use 'dps distance --scope "
+        "intra-chain' for new analyses."
+    )
+
+    if all(output is None for output in (
+        args.output_time,
+        args.output_pair,
+        args.output_pair_statistic,
+        args.output_verbose,
+    )):
+        raise ValueError("at least one output must be requested")
+
     # load trajectory into memory
 
     try:
@@ -75,8 +94,7 @@ def intra_distance(args):
         quit()
     
     if args.treat_pbc is True:
-        print(f"## Distance will be calculated using periodic boundary conditions.")
-        trajectory.Universe.trajectory.add_transformations(unwrap(trajectory.Universe.atoms))
+        print(f"## Distance will be calculated using minimum-image periodic boundary conditions.")
     else:
         print(f"## WARNING: Distance will be calculated without periodic boundary conditions.")
 
@@ -121,34 +139,103 @@ def intra_distance(args):
     print(f"## Will calculate {n_pairs} distance pairs for each of {n_chains} chains.")
 
     groups_splitchains_flatten = groups_splitchains.reshape(-1, 2)
+
+    reference_plan = EndpointPlan(
+        "legacy-idist-reference",
+        tuple(
+            Entity(
+                np.asarray([atom_index], dtype=np.int64),
+                np.asarray([trajectory.id2chainID[atom_index]], dtype=np.int64),
+                f"legacy-idist-reference[{pair_index}]",
+            )
+            for pair_index, atom_index in enumerate(
+                groups_splitchains_flatten[:, 0]
+            )
+        ),
+        "atom",
+    )
+    selection_plan = EndpointPlan(
+        "legacy-idist-selection",
+        tuple(
+            Entity(
+                np.asarray([atom_index], dtype=np.int64),
+                np.asarray([trajectory.id2chainID[atom_index]], dtype=np.int64),
+                f"legacy-idist-selection[{pair_index}]",
+            )
+            for pair_index, atom_index in enumerate(
+                groups_splitchains_flatten[:, 1]
+            )
+        ),
+        "atom",
+    )
+    distance_plan = build_distance_job(
+        "legacy-idist",
+        reference_plan,
+        selection_plan,
+        "corresponding",
+        "pair",
+    )
+    masses = np.asarray(trajectory.id2masses, dtype=np.float64)
     
     distances = np.zeros((len(frame_list),groups_splitchains_flatten.shape[0]))
     time_list = list()
 
     for ts_index, ts in tqdm(enumerate(trajectory.Universe.trajectory[frame_list])):
 
-        time_list.append(trajectory.Universe.trajectory.time / 1000)
-        pos1 = trajectory.Universe.atoms[groups_splitchains_flatten[:, 0]].positions
-        pos2 = trajectory.Universe.atoms[groups_splitchains_flatten[:, 1]].positions
-
-        # Compute vectors
-        v1 = pos1 - pos2
-
-        # Normalize
-        v1_norm = np.linalg.norm(v1, axis=1)
-
-        distances[ts_index, :] = v1_norm
+        time_list.append(ts.time / 1000)
+        positions = np.asarray(ts.positions, dtype=np.float64) / 10.0
+        dimensions = (
+            dimensions_angstrom_to_nm(ts.dimensions)
+            if args.treat_pbc
+            else None
+        )
+        reference_positions = project_endpoint(
+            reference_plan,
+            positions,
+            masses,
+            dimensions,
+            args.treat_pbc,
+        )
+        selection_positions = project_endpoint(
+            selection_plan,
+            positions,
+            masses,
+            dimensions,
+            args.treat_pbc,
+        )
+        frame_distances = np.concatenate(
+            [
+                block.values
+                for block in iter_distance_blocks(
+                    distance_plan,
+                    reference_positions,
+                    selection_positions,
+                    dimensions,
+                    args.treat_pbc,
+                )
+            ]
+        )
+        distances[ts_index, :] = frame_distances
     
-    distances = distances.reshape(len(frame_list), groups_splitchains.shape[0], groups_splitchains.shape[1]) / 10.0
+    distances = distances.reshape(len(frame_list), groups_splitchains.shape[0], groups_splitchains.shape[1])
     # Shape of distance: n_frame * n_pair * n_chain
     
     print(f"## Calculation ended.")
     print(f"## We will perform statistics and write to files.")
 
+    chain_ids = [
+        trajectory.get_chainID(groups_splitchains[0, chain_index, 0])
+        for chain_index in range(n_chains)
+    ]
+
     if args.output_verbose is not None:
         verbose_filename = validate_extension(args.output_verbose, "xvg")
 
-        legends = [f"Chain {trajectory.get_chainID(chain[0])} Pair {group_name}" for chain in groups_splitchains_flatten for group_name in groups_names]
+        legends = [
+            f"Chain {chain_id} Pair {group_name}"
+            for chain_id in chain_ids
+            for group_name in groups_names
+        ]
         write_xvg(verbose_filename, time_list, distances.transpose(0, 2, 1).reshape(distances.shape[0],-1).transpose(), 
                   title="Distance", xlabel="Time (ns)", ylabel="Distance (nm)",
                   legends=legends)
@@ -164,7 +251,7 @@ def intra_distance(args):
     
     if args.output_pair is not None:
         residue_filename = validate_extension(args.output_pair, "xvg")
-        legends = [f"Chain {trajectory.get_chainID(chain[0])}" for chain in groups_splitchains_flatten]
+        legends = [f"Chain {chain_id}" for chain_id in chain_ids]
         write_xvg(residue_filename, [i+1 for i in range(len(groups_names))], np.mean(distances, axis=0).transpose(),
                   title="Averaged distances", xlabel="Pair index", ylabel="Distance (nm)",
                   legends=legends)
@@ -178,7 +265,7 @@ def intra_distance(args):
         std = distance_per_residue.std(axis=1)
 
         mean_std = np.array([mean, std])
-        legends = ["Mean", "Standard error"]
+        legends = ["Mean", "Standard deviation"]
         write_xvg(statistic_filename, [i+1 for i in range(len(groups_names))], mean_std,
             title="Mean and std for distances", xlabel="Pair index", ylabel="Distance (nm)",
             legends=legends)

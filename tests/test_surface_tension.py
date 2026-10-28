@@ -24,6 +24,7 @@ from dropps.analysis.surface_tension_core import (
 )
 from dropps.commands.rerun import getargs_rerun, rerun
 from dropps.share.energy_reporter import read_edr
+from dropps.share.restart import RestartableXTCReporter
 
 
 class SurfaceTensionCoreTests(unittest.TestCase):
@@ -185,7 +186,9 @@ class SurfaceTensionOpenMMTests(unittest.TestCase):
                 integrator,
                 openmm.Platform.getPlatformByName("Reference"),
             )
-            reporter = openmm.app.XTCReporter(str(xtc_path), 1)
+            # Use the reporter used by mdrun.  OpenMM 8.5 changed the behavior
+            # of manually invoking app.XTCReporter at production step zero.
+            reporter = RestartableXTCReporter(str(xtc_path), 1)
             for step, distance in enumerate((1.0, 1.01, 0.99)):
                 frame_positions = positions.copy()
                 frame_positions[1, 2] = frame_positions[0, 2] + distance

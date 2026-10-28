@@ -34,13 +34,13 @@ def getargs_angle(argv):
     parser.add_argument('-sel', '--selection', type=int,
                         help="Index group containing angle-center beads; chains are split and terminal beads are ignored. If omitted, prompt interactively.")
     
-    parser.add_argument('-b', '--start-time', type=int,
+    parser.add_argument('-b', '--start-time', type=float,
                         help="First trajectory time to analyze, in ns.")
 
-    parser.add_argument('-e', '--end-time', type=int,
+    parser.add_argument('-e', '--end-time', type=float,
                         help="Last trajectory time to analyze, in ns.")
 
-    parser.add_argument('-dt', '--delta-time', type=int,
+    parser.add_argument('-dt', '--delta-time', type=float,
                         help="Approximate interval between analyzed frames, in ns.")
     
     parser.add_argument('-pbc', '--treat-pbc', action='store_true', default=False,
@@ -62,6 +62,14 @@ def getargs_angle(argv):
     return args
     
 def angle(args):
+
+    if all(output is None for output in (
+        args.output_time,
+        args.output_residue,
+        args.output_residue_statistic,
+        args.output_verbose,
+    )):
+        raise ValueError("at least one angle output must be requested")
 
     # load trajectory into memory
 
@@ -96,6 +104,8 @@ def angle(args):
     # We now split the indices
 
     selection_chains = trajectory.index.splitch_indices(selection.indices)
+    if not selection_chains:
+        raise ValueError("selection does not contain any chains")
 
     # We check chains
     chain_length_list = [len(chain) for chain in selection_chains]
@@ -133,7 +143,7 @@ def angle(args):
 
     for ts_index, ts in tqdm(enumerate(trajectory.Universe.trajectory[frame_list])):
 
-        time_list.append(trajectory.Universe.trajectory.time / 1000)
+        time_list.append(ts.time / 1000)
         pos1 = trajectory.Universe.atoms[angle_triplets[:, 0]].positions
         pos2 = trajectory.Universe.atoms[angle_triplets[:, 1]].positions
         pos3 = trajectory.Universe.atoms[angle_triplets[:, 2]].positions
@@ -189,7 +199,7 @@ def angle(args):
         mean = angles_per_residue.mean(axis=1)
         std = angles_per_residue.std(axis=1)
         mean_std = np.array([mean, std])
-        legends = ["Mean", "Standard error"]
+        legends = ["Mean", "Standard deviation"]
         write_xvg(statistic_filename, resIDs[0], mean_std,
             title="Mean and std for angles", xlabel="Residue index", ylabel="Angle (degree)",
             legends=legends)

@@ -15,8 +15,18 @@ from dropps.analysis.coexistence_core import (
     contiguous_block_statistics,
     fit_slab_profile_blocks,
     histogram_density,
-    periodic_center_fraction,
     plateau_masks,
+)
+from dropps.analysis.density_core import (
+    ANGSTROM_TO_NM,
+    AXIS_TO_INDEX,
+    DALTON_PER_NM3_TO_MG_PER_ML,
+    DEFAULT_DENSITY_BIN_WIDTH_NM,
+    PS_TO_NS as PS_TO_NS,
+    box_geometry_nm as _box_geometry_nm,
+    fractional_positions as _fractional_positions,
+    select_frame_indices,
+    threshold_profile_center,
 )
 from dropps.fileio.filename_control import validate_extension
 from dropps.share.command_class import single_command
@@ -26,85 +36,22 @@ from dropps.share.trajectory import trajectory_class
 prog = "coexistence"
 desc = "Analyze dense/dilute coexistence and interface width in a planar slab trajectory."
 
-ANGSTROM_TO_NM = 0.1
-PS_TO_NS = 0.001
-DALTON_PER_NM3_TO_MG_PER_ML = 1.66053906660
-AXIS_TO_INDEX = {"x": 0, "y": 1, "z": 2}
-
-
-def _select_frame_indices(trajectory, start_ns, end_ns, delta_ns):
-    if trajectory.n_frames == 0:
-        raise ValueError("Trajectory contains no frames.")
-
-    first_ns = float(trajectory[0].time) * PS_TO_NS
-    last_ns = float(trajectory[-1].time) * PS_TO_NS
-    frame_dt_ns = float(trajectory.dt) * PS_TO_NS
-    if not np.isfinite(frame_dt_ns) or frame_dt_ns <= 0.0:
-        raise ValueError("Trajectory frame interval must be positive and finite.")
-    tolerance = max(abs(frame_dt_ns), 1.0) * 1.0e-8
-
-    selected_start = first_ns if start_ns is None else float(start_ns)
-    selected_end = last_ns if end_ns is None else float(end_ns)
-    if selected_start < first_ns - tolerance:
-        raise ValueError(
-            f"Start time {selected_start:g} ns precedes the first frame at "
-            f"{first_ns:g} ns."
-        )
-    if selected_end > last_ns + tolerance:
-        raise ValueError(
-            f"End time {selected_end:g} ns follows the last frame at "
-            f"{last_ns:g} ns."
-        )
-    if selected_end < selected_start:
-        raise ValueError("End time must not precede start time.")
-
-    start_index = max(
-        0, int(np.ceil((selected_start - first_ns) / frame_dt_ns - 1.0e-10))
+def _select_frame_indices(
+    trajectory,
+    start_ns,
+    end_ns,
+    delta_ns,
+    *,
+    require_uniform=False,
+):
+    return select_frame_indices(
+        trajectory,
+        start_ns,
+        end_ns,
+        delta_ns,
+        minimum_frames=2,
+        require_uniform=require_uniform,
     )
-    stop_index = min(
-        trajectory.n_frames,
-        int(np.floor((selected_end - first_ns) / frame_dt_ns + 1.0e-10)) + 1,
-    )
-    if delta_ns is None:
-        stride = 1
-    else:
-        if not np.isfinite(delta_ns) or delta_ns <= 0.0:
-            raise ValueError("Frame interval must be positive and finite.")
-        stride = max(1, int(round(float(delta_ns) / frame_dt_ns)))
-
-    indices = list(range(start_index, stop_index, stride))
-    if len(indices) < 2:
-        raise ValueError("At least two trajectory frames are required.")
-    return indices, frame_dt_ns * stride
-
-
-def _box_geometry_nm(timestep):
-    box_angstrom = timestep.triclinic_dimensions
-    if box_angstrom is None:
-        raise ValueError("Trajectory frame does not contain periodic box vectors.")
-    box = np.asarray(box_angstrom, dtype=float) * ANGSTROM_TO_NM
-    if box.shape != (3, 3) or not np.all(np.isfinite(box)):
-        raise ValueError("Periodic box vectors must form a finite 3x3 matrix.")
-
-    lengths = np.linalg.norm(box, axis=1)
-    volume = float(abs(np.linalg.det(box)))
-    if np.any(lengths <= 0.0) or volume <= 0.0:
-        raise ValueError("Periodic box must have positive lengths and volume.")
-    gram = box @ box.T
-    off_diagonal = gram - np.diag(np.diag(gram))
-    scale = np.outer(lengths, lengths)
-    if np.any(np.abs(off_diagonal) > 1.0e-6 * scale):
-        raise ValueError(
-            "Coexistence analysis currently requires an orthorhombic box."
-        )
-    return box, lengths, volume
-
-
-def _fractional_positions(positions_nm, box_vectors_nm):
-    positions = np.asarray(positions_nm, dtype=float)
-    if positions.ndim != 2 or positions.shape[1] != 3:
-        raise ValueError("Positions must have shape (n_particles, 3).")
-    return np.mod(positions @ np.linalg.inv(box_vectors_nm), 1.0)
 
 
 def _select_groups(trajectory, args):
@@ -179,6 +126,7 @@ def _write_profile_xvg(
             f"# reference_group={metadata['reference_group']} axis={metadata['axis']} "
             f"frames={metadata['frames']} blocks={fit_statistics['blocks']} "
             f"centering_groups={metadata['centering_groups']} "
+            f"dense_phase_threshold={metadata['dense_phase_threshold']:.10g} "
             f"requested_bin_width_nm={metadata['requested_bin_width_nm']:.10g} "
             f"actual_bin_width_nm={metadata['actual_bin_width_nm']:.10g}\n"
         )
@@ -339,8 +287,21 @@ def getargs_coexistence(argv):
     parser.add_argument(
         "--bin-width",
         type=float,
-        default=0.2,
-        help="Requested density-bin width, in nm.",
+        default=DEFAULT_DENSITY_BIN_WIDTH_NM,
+        help=(
+            "Requested density-bin width, in nm. The default matches the "
+            "density command."
+        ),
+    )
+    parser.add_argument(
+        "-t",
+        "--dense-phase-threshold",
+        type=float,
+        default=0.5,
+        help=(
+            "Dense-phase threshold as a fraction of the maximum reference "
+            "density; shared with the density command."
+        ),
     )
     parser.add_argument(
         "-b", "--start-time", type=float, help="First trajectory time to analyze, in ns."
@@ -379,18 +340,15 @@ def coexistence(args):
         raise ValueError("Number of blocks must be positive.")
     if not np.isfinite(args.plateau_buffer) or args.plateau_buffer < 0.0:
         raise ValueError("Plateau buffer must be finite and non-negative.")
+    if (
+        not np.isfinite(args.dense_phase_threshold)
+        or not 0.0 < args.dense_phase_threshold < 1.0
+    ):
+        raise ValueError("Dense-phase threshold must be finite and between 0 and 1.")
 
     trajectory = trajectory_class(args.run_input, args.index, args.input)
     reference, groups = _select_groups(trajectory, args)
     reference_indices = np.asarray(reference.indices, dtype=int)
-    reference_weights = np.asarray(reference.masses, dtype=float)
-    if (
-        not np.all(np.isfinite(reference_weights))
-        or np.any(reference_weights < 0.0)
-        or reference_weights.sum() <= 0.0
-    ):
-        raise ValueError("Reference group must have positive finite masses.")
-
     group_names = [name for name, _ in groups]
     group_indices = [np.asarray(group.indices, dtype=int) for _, group in groups]
     if args.density_type == "mass":
@@ -408,6 +366,9 @@ def coexistence(args):
         for weights in group_weights
     ):
         raise ValueError("Density weights must be finite and non-negative.")
+    reference_weights = group_weights[0]
+    if reference_weights.sum() <= 0.0:
+        raise ValueError("Reference density group must have positive total weight.")
 
     frame_indices, actual_interval_ns = _select_frame_indices(
         trajectory.Universe.trajectory,
@@ -434,13 +395,20 @@ def coexistence(args):
         frame_center_orders = []
         for frame_index in tqdm(frame_indices, desc="## Locating dense slab"):
             timestep = trajectory.Universe.trajectory[frame_index]
-            box_nm, _, _ = _box_geometry_nm(timestep)
+            box_nm, _, volume_nm3 = _box_geometry_nm(timestep)
             positions_nm = (
                 np.asarray(timestep.positions, dtype=float) * ANGSTROM_TO_NM
             )
             fractional = _fractional_positions(positions_nm, box_nm)
-            center, order = periodic_center_fraction(
-                fractional[reference_indices, axis_index], reference_weights
+            reference_profile = histogram_density(
+                fractional[reference_indices, axis_index],
+                reference_weights,
+                volume_nm3,
+                bins,
+            )
+            center, order = threshold_profile_center(
+                reference_profile,
+                args.dense_phase_threshold,
             )
             frame_centers.append(center)
             frame_center_orders.append(order)
@@ -465,8 +433,15 @@ def coexistence(args):
         if args.center_mode == "none":
             centered_axis = fractional[:, axis_index]
             try:
-                _, frame_center_orders[local_index] = periodic_center_fraction(
-                    fractional[reference_indices, axis_index], reference_weights
+                reference_profile = histogram_density(
+                    fractional[reference_indices, axis_index],
+                    reference_weights,
+                    volume_nm3,
+                    bins,
+                )
+                _, frame_center_orders[local_index] = threshold_profile_center(
+                    reference_profile,
+                    args.dense_phase_threshold,
                 )
             except ValueError:
                 frame_center_orders[local_index] = 0.0
@@ -549,6 +524,7 @@ def coexistence(args):
         "frames": len(frame_indices),
         "center_mode": args.center_mode,
         "centering_groups": schedule["groups"],
+        "dense_phase_threshold": args.dense_phase_threshold,
         "requested_bin_width_nm": args.bin_width,
         "actual_bin_width_nm": mean_length_nm / bins,
         "mean_center_order": mean_center_order,
@@ -577,7 +553,8 @@ def coexistence(args):
     )
 
     print(
-        f"## Analyzed {len(frame_indices)} frames every {actual_interval_ns:g} ns; "
+        f"## Analyzed {len(frame_indices)} frames with median interval "
+        f"{actual_interval_ns:g} ns; "
         f"fit R^2 = {fit['r_squared']:.6g}."
     )
     print(

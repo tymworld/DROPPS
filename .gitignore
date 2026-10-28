@@ -5,3 +5,18 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.venv/
+build/
+*.egg-info/
+release/
+dist/*.whl
+dist/*.tar.gz
+
+# Local reports, validation environments, and authoring artifacts
+.venv*/
+.codex-build/
+.chart-data-*/
+output/
+outputs/
+dropps/backups/

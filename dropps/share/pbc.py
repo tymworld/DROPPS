@@ -11,17 +11,17 @@ def cal_distance(vector_1: np.ndarray, vector_2: np.ndarray):
     return np.linalg.norm(vector_2 - vector_1, axis=1) / np.sqrt(3)
 
 def find_nearest(last: np.array, this: np.array, box):
-    x = box[0].value_in_unit(nanometer)
-    y = box[1].value_in_unit(nanometer)
-    z = box[2].value_in_unit(nanometer)
-
-    possible_additions = np.array([[timex * x, timey * y, timez * z] \
-                                   for timex in [-1,0,1] for timey in [-1,0,1] for timez in [-1,0,1]])
-    distance = cal_distance(np.array(this) + np.array(possible_additions), last)
-    min_index = distance.argmin()
-    return deepcopy(this + possible_additions[min_index])
+    lengths = np.asarray([value.value_in_unit(nanometer) for value in box])
+    if not np.all(np.isfinite(lengths)) or np.any(lengths <= 0):
+        raise ValueError("Periodic box lengths must be finite and positive.")
+    previous = np.asarray(last, dtype=float)
+    delta = np.asarray(this, dtype=float) - previous
+    return previous + delta - lengths * np.round(delta / lengths)
 
 def unwrap_pbc(atoms, box):
+
+    if not atoms:
+        return np.empty((0, 3), dtype=float)
 
     print(f"## PBCTREATER: Altogether there are {len(atoms)} atoms (input).")
     

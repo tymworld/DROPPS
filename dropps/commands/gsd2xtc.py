@@ -6,6 +6,7 @@ from dropps.share.argument_parser import ArgumentParser
 import MDAnalysis as mda
 from MDAnalysis.coordinates import XTC
 import numpy as np
+from pathlib import Path
 
 from dropps.fileio.filename_control import validate_extension
 
@@ -13,6 +14,25 @@ from tqdm import tqdm
 
 prog = "gsd2xtc"
 desc = "Convert a GSD trajectory to XTC format."
+
+
+def _has_valid_box(dimensions):
+    if dimensions is None:
+        return False
+    dimensions = np.asarray(dimensions, dtype=float)
+    return (
+        dimensions.size >= 6
+        and np.all(np.isfinite(dimensions[:6]))
+        and np.all(dimensions[:3] > 0.0)
+    )
+
+
+def _frame_time_ps(frame_index, time_step_ns):
+    if not np.isfinite(time_step_ns) or time_step_ns <= 0.0:
+        raise ValueError("time step must be a positive finite number")
+    if frame_index < 0:
+        raise ValueError("frame index must be non-negative")
+    return frame_index * time_step_ns * 1000.0
 
 def getargs_gsd2xtc(argv):
 
@@ -39,6 +59,13 @@ def getargs_gsd2xtc(argv):
 
 def gsd2xtc(args):
 
+    if not np.isfinite(args.time_step) or args.time_step <= 0.0:
+        raise ValueError("time step must be a positive finite number")
+
+    output_filename = validate_extension(args.output, "xtc")
+    if Path(args.input).resolve() == Path(output_filename).resolve():
+        raise ValueError("input and output trajectory paths must be different")
+
     u = mda.Universe(args.input)
 
     box_override = None
@@ -46,15 +73,12 @@ def gsd2xtc(args):
         if any(length <= 0 for length in args.box):
             raise ValueError("All box lengths must be positive.")
         box_override = np.array([*args.box, 90.0, 90.0, 90.0])
-    elif np.all(u.dimensions[:3] == 0):
+    elif not _has_valid_box(u.dimensions):
         raise ValueError(
             "The GSD trajectory has no periodic box. Supply box lengths with --box X Y Z."
         )
 
-    output_filename = validate_extension(args.output, "xtc")
-
     factor = 10.0
-    time_step = args.time_step * 1000
 
     print(f"## Will treat {len(u.trajectory)} frames in {args.input} with {u.trajectory.n_atoms} atoms.")
 
@@ -66,7 +90,7 @@ def gsd2xtc(args):
 
             if box_override is not None:
                 ts.dimensions = box_override
-            elif np.all(ts.dimensions[:3] == 0):
+            elif not _has_valid_box(ts.dimensions):
                 raise ValueError(
                     f"GSD frame {i} has no periodic box. Supply box lengths with --box X Y Z."
                 )
@@ -76,7 +100,7 @@ def gsd2xtc(args):
                              ts.dimensions[3], ts.dimensions[4], ts.dimensions[5]]
             
             # Set the time for the frame
-            ts.time = time_step + i * time_step  # Start at time_step and increment by time_step
+            ts.time = _frame_time_ps(i, args.time_step)
             
             # Write the modified frame to the XTC file
             xtc_writer.write(u)

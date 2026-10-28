@@ -5,6 +5,14 @@ from dropps.share.argument_parser import ArgumentParser
 from dropps.share.trajectory import trajectory_class
 from dropps.fileio.filename_control import validate_extension
 from dropps.fileio.xvg_reader import write_xvg
+from dropps.analysis.distance_core import (
+    build_distance_job,
+    build_endpoint_plan,
+    dimensions_angstrom_to_nm,
+    iter_active_entity_pair_blocks,
+    iter_distance_blocks,
+    project_endpoint,
+)
 
 from tqdm import tqdm
 import numpy as np
@@ -14,10 +22,10 @@ from Bio import BiopythonDeprecationWarning
 
 warnings.filterwarnings("ignore", category=BiopythonDeprecationWarning)
 
-from MDAnalysis.transformations import unwrap
+from MDAnalysis.lib.distances import minimize_vectors
 
 prog = "odist"
-desc = "Calculate distances between corresponding beads in two chain groups."
+desc = "Deprecated alias for legacy inter-chain distance profiles."
 
 def getargs_inter_distance(argv):
 
@@ -38,13 +46,13 @@ def getargs_inter_distance(argv):
     parser.add_argument('-sel', '--selection', type=int,
                         help="Selection index group containing one bead per chain; if omitted, prompt interactively.")
     
-    parser.add_argument('-b', '--start-time', type=int,
+    parser.add_argument('-b', '--start-time', type=float,
                         help="First trajectory time to analyze, in ns.")
 
-    parser.add_argument('-e', '--end-time', type=int,
+    parser.add_argument('-e', '--end-time', type=float,
                         help="Last trajectory time to analyze, in ns.")
 
-    parser.add_argument('-dt', '--delta-time', type=int,
+    parser.add_argument('-dt', '--delta-time', type=float,
                         help="Approximate interval between analyzed frames, in ns.")
     
     parser.add_argument('-pbc', '--treat-pbc', action='store_true', default=False,
@@ -60,7 +68,40 @@ def getargs_inter_distance(argv):
     args = parser.parse_args(argv)
     return args
 
+
+def _interchain_pairs(reference_indices, selection_indices,
+                      reference_chain_ids, selection_chain_ids):
+    """Return atom pairs whose two atoms belong to different chains."""
+    pairs = [
+        (reference_index, selection_index)
+        for reference_index, reference_chain in zip(reference_indices, reference_chain_ids)
+        for selection_index, selection_chain in zip(selection_indices, selection_chain_ids)
+        if reference_chain != selection_chain
+    ]
+    if not pairs:
+        raise ValueError("reference and selection groups contain no inter-chain pairs")
+    return np.asarray(pairs, dtype=int)
+
+
+def _distance_vectors_nm(pos1, pos2, dimensions=None):
+    """Calculate displacement-vector lengths in nm, optionally using minimum images."""
+    vectors = np.asarray(pos1, dtype=float) - np.asarray(pos2, dtype=float)
+    if dimensions is not None:
+        box = np.asarray(dimensions, dtype=float)
+        if box.size < 6 or not np.all(np.isfinite(box[:6])) or np.any(box[:3] <= 0):
+            raise ValueError("valid periodic box dimensions are required for --treat-pbc")
+        vectors = minimize_vectors(vectors, box)
+    return np.linalg.norm(vectors, axis=1) / 10.0
+
 def inter_distance(args):
+
+    print(
+        "## WARNING: 'odist' is deprecated; use 'dps distance --scope "
+        "inter-chain' for new analyses."
+    )
+
+    if args.output_average is None and args.output_verbose is None:
+        raise ValueError("at least one output must be requested with -oa or -ov")
 
     # load trajectory into memory
 
@@ -72,8 +113,7 @@ def inter_distance(args):
         quit()
     
     if args.treat_pbc is True:
-        print(f"## Distance will be calculated using periodic boundary conditions.")
-        trajectory.Universe.trajectory.add_transformations(unwrap(trajectory.Universe.atoms))
+        print(f"## Distance will be calculated using minimum-image periodic boundary conditions.")
     else:
         print(f"## WARNING: Distance will be calculated without periodic boundary conditions.")
 
@@ -103,60 +143,104 @@ def inter_distance(args):
     reference_splitchains = trajectory.index.splitch_indices(reference.indices)
     selection_splitchains = trajectory.index.splitch_indices(selection.indices)
 
-    if len(set([len(group) for group in reference_splitchains])) > 1:
-        print(f"ERROR: multiple atoms in single chain for reference group.")
-        quit()
-    if len(set([len(group) for group in selection_splitchains])) > 1:
-        print(f"ERROR: multiple atoms in single chain for selection group.")
-        quit()
+    if not reference_splitchains or any(len(group) != 1 for group in reference_splitchains):
+        raise ValueError("reference group must contain exactly one atom per chain")
+    if not selection_splitchains or any(len(group) != 1 for group in selection_splitchains):
+        raise ValueError("selection group must contain exactly one atom per chain")
     if len(reference) != len(selection):
-        print(f"ERROR: Number of atoms in reference and selection groups not match.")
-        quit()
-    
-    
-    pairs = np.array([[a1, a2] for a1 in reference.indices for a2 in selection.indices])
+        raise ValueError("reference and selection groups must contain the same number of atoms")
 
-    distances = np.zeros((len(frame_list),len(reference) * len(selection)))
+    reference_chain_ids = [trajectory.get_chainID(index) for index in reference.indices]
+    selection_chain_ids = [trajectory.get_chainID(index) for index in selection.indices]
+    if set(reference_chain_ids) != set(selection_chain_ids):
+        raise ValueError("reference and selection groups must contain the same chains")
+
+    reference_plan = build_endpoint_plan(
+        reference.indices,
+        reference_name,
+        "atom",
+        "atom",
+        trajectory.id2chainID,
+        trajectory.id2resID,
+    )
+    selection_plan = build_endpoint_plan(
+        selection.indices,
+        selection_name,
+        "atom",
+        "atom",
+        trajectory.id2chainID,
+        trajectory.id2resID,
+    )
+    distance_plan = build_distance_job(
+        "legacy-odist",
+        reference_plan,
+        selection_plan,
+        "inter-chain",
+        "pair",
+    )
+    pair_chain_ids = []
+    for entity_pairs in iter_active_entity_pair_blocks(distance_plan):
+        pair_chain_ids.extend(
+            (
+                reference_plan.entities[int(ref_entity)].chain_ids[0],
+                selection_plan.entities[int(sel_entity)].chain_ids[0],
+            )
+            for ref_entity, sel_entity in entity_pairs
+        )
+    masses = np.asarray(trajectory.id2masses, dtype=np.float64)
+
+    distances = np.zeros((len(frame_list), distance_plan.channel_count))
     time_list = list()
 
     for ts_index, ts in tqdm(enumerate(trajectory.Universe.trajectory[frame_list])):
 
-        time_list.append(trajectory.Universe.trajectory.time / 1000)
-        pos1 = trajectory.Universe.atoms[pairs[:, 0]].positions
-        pos2 = trajectory.Universe.atoms[pairs[:, 1]].positions
-
-        # Compute vectors
-        v1 = pos1 - pos2
-
-        # Normalize
-        v1_norm = np.linalg.norm(v1, axis=1)
-
-        distances[ts_index, :] = v1_norm
-    
-    distances_matrix = distances.reshape(len(time_list), len(reference), len(selection))
-
-    distances_no_diag = distances_matrix.copy()
-    n = distances_matrix.shape[1]
-    idx = np.arange(n)
-    distances_no_diag[:, idx, idx] = 0
+        time_list.append(ts.time / 1000)
+        positions = np.asarray(ts.positions, dtype=np.float64) / 10.0
+        dimensions = (
+            dimensions_angstrom_to_nm(ts.dimensions)
+            if args.treat_pbc
+            else None
+        )
+        reference_positions = project_endpoint(
+            reference_plan,
+            positions,
+            masses,
+            dimensions,
+            args.treat_pbc,
+        )
+        selection_positions = project_endpoint(
+            selection_plan,
+            positions,
+            masses,
+            dimensions,
+            args.treat_pbc,
+        )
+        distances[ts_index, :] = np.concatenate(
+            [
+                block.values
+                for block in iter_distance_blocks(
+                    distance_plan,
+                    reference_positions,
+                    selection_positions,
+                    dimensions,
+                    args.treat_pbc,
+                )
+            ]
+        )
     
     print(f"## Calculation ended.")
     print(f"## We will perform statistics and write to files.")
-
-    chain_index_list = [trajectory.get_chainID(atom) for atom in reference.indices]
 
     if args.output_verbose is not None:
 
         verbose_filename = validate_extension(args.output_verbose, "xvg")
 
-        legends = [f"Chain {chain_index_list[j]} - Chain {chain_index_list[i]}"
-                   for i in range(len(chain_index_list)) for j in range(i)]
+        legends = [
+            f"Reference chain {reference_chain} - selection chain {selection_chain}"
+            for reference_chain, selection_chain in pair_chain_ids
+        ]
         
-        distances_verbose = np.array([[distances_matrix[time_index, j, i]
-                                       for i in range(len(chain_index_list)) for j in range(i)]
-                                       for time_index in range(len(time_list))])
-        
-        write_xvg(verbose_filename, time_list, distances_verbose,
+        write_xvg(verbose_filename, time_list, distances.transpose(),
                   title="Distance", xlabel="Time (ns)", ylabel="Distance (nm)",
                   legends=legends)
         
@@ -165,8 +249,7 @@ def inter_distance(args):
     if args.output_average is not None:
         average_filename = validate_extension(args.output_average, "xvg")
 
-        avg_off_diag = distances_no_diag.sum(axis=(1, 2)) / (n * n - n)
-        print(avg_off_diag.shape)
+        avg_off_diag = distances.mean(axis=1)
         
         write_xvg(average_filename, time_list, avg_off_diag,
                   title="Averaged distances", xlabel="Time (ns)", ylabel="Distance (nm)")

@@ -14,6 +14,7 @@ from MDAnalysis.lib.nsgrid import FastNS
 
 from dropps.share.trajectory import trajectory_class
 from dropps.analysis.contact import compute_residue_contact_maps_fixed, remove_near_diagonal
+from dropps.analysis.time_core import uniform_frame_interval_ns
 
 import warnings
 from Bio import BiopythonDeprecationWarning
@@ -158,7 +159,7 @@ def getargs_timecorr(argv):
     parser.add_argument('-sel', '--selection-group', type=str,
                         help="Optional selection index group forming the y axis of cross-group matrices.")
 
-    parser.add_argument('-cs', '--cutoff-scheme', type=str, choices=["global", "residue"], required=True,
+    parser.add_argument('-cs', '-k', '--cutoff-scheme', type=str, choices=["global", "residue"], required=True,
                         help="Contact-cutoff scheme: one global distance or residue-specific distances.")
 
     parser.add_argument('-c', '--cutoff', type=float, default=0.7,
@@ -176,13 +177,13 @@ def getargs_timecorr(argv):
     parser.add_argument('-ml', '--max-lag', type=float,
                         help="Maximum correlation lag, in ns; if omitted, use all analyzed frames.")
 
-    parser.add_argument('-b', '--start-time', type=int,
+    parser.add_argument('-b', '--start-time', type=float,
                         help="First trajectory time to analyze, in ns.")
 
-    parser.add_argument('-e', '--end-time', type=int,
+    parser.add_argument('-e', '--end-time', type=float,
                         help="Last trajectory time to analyze, in ns.")
 
-    parser.add_argument('-dt', '--delta-time', type=int,
+    parser.add_argument('-dt', '--delta-time', type=float,
                         help="Approximate interval between analyzed frames, in ns.")
 
     parser.add_argument('-pbc', '--treat-pbc', action='store_true', default=False,
@@ -235,6 +236,15 @@ def getargs_timecorr(argv):
 
 
 def timecorr(args):
+
+    if not 0.0 < args.threshold <= 1.0:
+        raise ValueError("correlation threshold must be in (0, 1]")
+    if args.remove_diagonal < 0:
+        raise ValueError("remove-diagonal must be non-negative")
+    if args.cutoff_scheme == "global" and args.cutoff <= 0.0:
+        raise ValueError("global cutoff must be positive")
+    if args.cutoff_scheme == "residue" and args.cutoff_multiplier <= 0.0:
+        raise ValueError("residue cutoff multiplier must be positive")
 
     try:
         trajectory = trajectory_class(args.run_input, args.index, args.input)
@@ -450,13 +460,9 @@ def timecorr(args):
                 )
                 series_dict["inter_ss"].append(inter_ss)
 
-    if len(time_list) == 0:
-        print("ERROR: No frames were selected for analysis.")
-        quit()
-
     print("## Time-series collection completed.")
 
-    frame_dt_ns = trajectory.Universe.trajectory.dt * interval_frame / 1000.0
+    frame_dt_ns = uniform_frame_interval_ns(time_list)
     n_frames = len(time_list)
     if args.max_lag is None:
         max_lag_frames = n_frames
@@ -464,7 +470,7 @@ def timecorr(args):
         if args.max_lag <= 0:
             print("ERROR: Maximum lag time must be positive.")
             quit()
-        max_lag_frames = max(1, int(round(args.max_lag / frame_dt_ns)))
+        max_lag_frames = max(1, int(np.floor(args.max_lag / frame_dt_ns)) + 1)
     max_lag_frames = min(max_lag_frames, n_frames)
     lag_times = np.arange(max_lag_frames, dtype=np.float64) * frame_dt_ns
 

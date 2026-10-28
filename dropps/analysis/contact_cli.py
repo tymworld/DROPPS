@@ -20,17 +20,20 @@ def add_contact_arguments(parser):
         help="Optional index file (.ndx) defining additional atom groups.",
     )
     parser.add_argument(
-        "-ref",
+        "-r",
         "--reference-group",
+        "-ref",
         help="Reference index group forming the x axis of each contact map.",
     )
     parser.add_argument(
-        "-sel",
+        "-sg",
         "--selection-group",
+        "-sel",
         help="Optional selection index group forming the y axis of cross-group maps.",
     )
     parser.add_argument(
         "-cs",
+        "-k",
         "--cutoff-scheme",
         choices=("global", "residue"),
         required=True,
@@ -60,24 +63,26 @@ def add_contact_arguments(parser):
     parser.add_argument(
         "-b",
         "--start-time",
-        type=int,
+        type=float,
         help="First trajectory time to analyze, in ns.",
     )
     parser.add_argument(
         "-e",
         "--end-time",
-        type=int,
+        type=float,
         help="Last trajectory time to analyze, in ns.",
     )
     parser.add_argument(
-        "-dt",
+        "-d",
         "--delta-time",
-        type=int,
+        "-dt",
+        type=float,
         help="Approximate interval between analyzed frames, in ns.",
     )
     parser.add_argument(
-        "-pbc",
+        "-p",
         "--treat-pbc",
+        "-pbc",
         action="store_true",
         default=False,
         help="Apply periodic-boundary distances during contact calculation.",

@@ -23,7 +23,10 @@ from dropps.analysis.coexistence_core import (
     centering_schedule,
     fit_slab_profile_blocks,
     histogram_density,
-    periodic_center_fraction,
+)
+from dropps.analysis.density_core import (
+    DEFAULT_DENSITY_BIN_WIDTH_NM,
+    threshold_profile_center,
 )
 from dropps.analysis.exchange_core import (
     DENSE,
@@ -163,6 +166,7 @@ def _write_profile_xvg(
         )
         handle.write(
             f"# interface_threshold={metadata['interface_threshold']:.12g} "
+            f"dense_phase_threshold={metadata['dense_phase_threshold']:.12g} "
             f"dense_cutoff_nm={dense_cutoff_nm:.12g} "
             f"dilute_cutoff_nm={dilute_cutoff_nm:.12g}\n"
         )
@@ -489,8 +493,17 @@ def getargs_exchange(argv):
     parser.add_argument(
         "--bin-width",
         type=float,
-        default=0.2,
-        help="Requested reference density-bin width, in nm.",
+        default=DEFAULT_DENSITY_BIN_WIDTH_NM,
+        help="Requested reference density-bin width, in nm; shared with density.",
+    )
+    parser.add_argument(
+        "--dense-phase-threshold",
+        type=float,
+        default=0.5,
+        help=(
+            "Dense-phase threshold as a fraction of the maximum reference "
+            "density; shared with density and coexistence."
+        ),
     )
     parser.add_argument(
         "--interface-threshold",
@@ -532,6 +545,11 @@ def exchange(args):
         raise ValueError("Bin width must be positive and finite.")
     if args.blocks <= 0:
         raise ValueError("Number of blocks must be positive.")
+    if (
+        not np.isfinite(args.dense_phase_threshold)
+        or not 0.0 < args.dense_phase_threshold < 1.0
+    ):
+        raise ValueError("Dense-phase threshold must be finite and between 0 and 1.")
     if (
         not np.isfinite(args.interface_threshold)
         or not 0.0 < args.interface_threshold < 0.5
@@ -578,11 +596,18 @@ def exchange(args):
         frame_center_orders = []
         for frame_index in tqdm(frame_indices, desc="## Locating dense slab"):
             timestep = analyzed_trajectory[frame_index]
-            box_nm, _, _ = _box_geometry_nm(timestep)
+            box_nm, _, volume_nm3 = _box_geometry_nm(timestep)
             positions_nm = np.asarray(timestep.positions, dtype=float) * ANGSTROM_TO_NM
             fractional = _fractional_positions(positions_nm, box_nm)
-            center, order = periodic_center_fraction(
-                fractional[reference_indices, axis_index], reference_weights
+            reference_profile = histogram_density(
+                fractional[reference_indices, axis_index],
+                reference_weights,
+                volume_nm3,
+                bins,
+            )
+            center, order = threshold_profile_center(
+                reference_profile,
+                args.dense_phase_threshold,
             )
             frame_centers.append(center)
             frame_center_orders.append(order)
@@ -611,8 +636,15 @@ def exchange(args):
         if args.center_mode == "none":
             centered_axis = fractional[:, axis_index]
             try:
-                _, frame_center_orders[local_index] = periodic_center_fraction(
-                    fractional[reference_indices, axis_index], reference_weights
+                reference_profile = histogram_density(
+                    fractional[reference_indices, axis_index],
+                    reference_weights,
+                    volume_nm3,
+                    bins,
+                )
+                _, frame_center_orders[local_index] = threshold_profile_center(
+                    reference_profile,
+                    args.dense_phase_threshold,
                 )
             except ValueError:
                 frame_center_orders[local_index] = 0.0
@@ -693,6 +725,7 @@ def exchange(args):
         "center_mode": args.center_mode,
         "centering_groups": schedule["groups"],
         "interface_threshold": args.interface_threshold,
+        "dense_phase_threshold": args.dense_phase_threshold,
     }
     _write_profile_xvg(
         paths["profile"],
@@ -713,7 +746,8 @@ def exchange(args):
         )
 
     print(
-        f"## Analyzed {len(frame_indices)} frames every {actual_interval_ns:g} ns; "
+        f"## Analyzed {len(frame_indices)} frames with median interval "
+        f"{actual_interval_ns:g} ns; "
         f"tracked {len(molecules)} molecules and confirmed {len(events)} exchanges."
     )
     print(

@@ -8,6 +8,11 @@ from pathlib import Path
 import numpy as np
 from tqdm import tqdm
 
+from dropps.analysis.density_core import (
+    ANGSTROM_TO_NM,
+    PS_TO_NS,
+    select_frame_indices,
+)
 from dropps.analysis.surface_tension_core import (
     block_statistics,
     deform_configuration,
@@ -28,10 +33,6 @@ prog = "surftension"
 desc = (
     "Calculate planar-interface surface tension from a DROPPS TPR and XTC trajectory."
 )
-
-ANGSTROM_TO_NM = 0.1
-PS_TO_NS = 0.001
-
 
 def evaluate_frame_surface_tension(
     context,
@@ -62,48 +63,13 @@ def evaluate_frame_surface_tension(
 
 
 def _select_frame_indices(trajectory, start_ns, end_ns, delta_ns):
-    if trajectory.n_frames == 0:
-        raise ValueError("Trajectory contains no frames.")
-
-    first_ns = float(trajectory[0].time) * PS_TO_NS
-    last_ns = float(trajectory[-1].time) * PS_TO_NS
-    frame_dt_ns = float(trajectory.dt) * PS_TO_NS
-    if not np.isfinite(frame_dt_ns) or frame_dt_ns <= 0:
-        raise ValueError("Trajectory frame times must be strictly increasing.")
-    tolerance = max(abs(frame_dt_ns), 1.0) * 1.0e-8
-
-    selected_start = first_ns if start_ns is None else float(start_ns)
-    selected_end = last_ns if end_ns is None else float(end_ns)
-    if selected_start < first_ns - tolerance:
-        raise ValueError(
-            f"Start time {selected_start:g} ns precedes the first frame "
-            f"at {first_ns:g} ns."
-        )
-    if selected_end > last_ns + tolerance:
-        raise ValueError(
-            f"End time {selected_end:g} ns follows the last frame at {last_ns:g} ns."
-        )
-    if selected_end < selected_start:
-        raise ValueError("End time must not precede start time.")
-
-    start_index = max(
-        0, int(np.ceil((selected_start - first_ns) / frame_dt_ns - 1.0e-10))
+    return select_frame_indices(
+        trajectory,
+        start_ns,
+        end_ns,
+        delta_ns,
+        minimum_frames=2,
     )
-    stop_index = min(
-        trajectory.n_frames,
-        int(np.floor((selected_end - first_ns) / frame_dt_ns + 1.0e-10)) + 1,
-    )
-    if delta_ns is None:
-        stride = 1
-    else:
-        if delta_ns <= 0:
-            raise ValueError("Frame interval must be positive.")
-        stride = max(1, int(round(float(delta_ns) / frame_dt_ns)))
-
-    indices = list(range(start_index, stop_index, stride))
-    if len(indices) < 2:
-        raise ValueError("At least two trajectory frames are required.")
-    return indices, frame_dt_ns * stride
 
 
 def _write_xvg(output_path, times_ns, gamma_by_strain, statistics, metadata):
@@ -313,7 +279,7 @@ def surface_tension(args):
         threads=args.threads,
     )
     print(
-        f"## Evaluating {len(frame_indices)} frames every "
+        f"## Evaluating {len(frame_indices)} frames with median interval "
         f"{actual_interval_ns:g} ns on OpenMM {platform}."
     )
     if properties:

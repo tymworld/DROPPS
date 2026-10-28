@@ -16,7 +16,7 @@ from dropps.share.parameters import parameters_dict_template
 from dropps.share.energy_reporter import read_edr
 
 
-def _runtime(nsteps, checkpoint_interval):
+def _runtime(nsteps, checkpoint_interval, **parameter_overrides):
     system = openmm.System()
     atom_count = 10
     for _ in range(atom_count):
@@ -57,6 +57,7 @@ def _runtime(nsteps, checkpoint_interval):
             "nst_stress": 0,
         }
     )
+    parameters.update(parameter_overrides)
     pdb_raw = SimpleNamespace(
         record_names=["ATOM"] * atom_count,
         serial_numbers=list(range(1, atom_count + 1)),
@@ -81,9 +82,115 @@ def _runtime(nsteps, checkpoint_interval):
 
 
 class MdrunResumeTests(unittest.TestCase):
+    def test_fresh_run_rejects_missing_initial_velocities(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            run_input = directory / "run.tpr"
+            with run_input.open("wb") as handle:
+                pickle.dump(
+                    _runtime(nsteps=0, checkpoint_interval=0, gen_vel=False),
+                    handle,
+                )
+            with self.assertRaisesRegex(ValueError, "do not contain velocities"):
+                mdrun(
+                    SimpleNamespace(
+                        run_input=str(run_input),
+                        output_prefix=str(directory / "run"),
+                        checkpoint=None,
+                    )
+                )
+
     def test_checkpoint_argument_can_use_output_prefix(self):
         args = getargs_mdrun(["-s", "run.tpr", "-o", "run", "-cpi"])
         self.assertEqual(args.checkpoint, "auto")
+
+    def test_warming_steps_are_excluded_from_production_outputs(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            run_input = directory / "run.tpr"
+            output_prefix = directory / "run"
+
+            runtime = _runtime(
+                nsteps=2,
+                checkpoint_interval=0,
+                initial_temperature=299.0,
+                production_temperature=300.0,
+                # With dt=0.001 ps this gives one integration step per K.
+                warming_speed=1_000_000,
+            )
+            with run_input.open("wb") as handle:
+                pickle.dump(runtime, handle)
+
+            mdrun(
+                SimpleNamespace(
+                    run_input=str(run_input),
+                    output_prefix=str(output_prefix),
+                    checkpoint=None,
+                )
+            )
+
+            with XTCFile(f"{output_prefix}.xtc", "r") as trajectory:
+                trajectory_steps = [frame.step for frame in trajectory]
+                trajectory_times = [frame.time for frame in trajectory]
+            self.assertEqual(trajectory_steps, [0, 1, 2])
+            np.testing.assert_allclose(trajectory_times, [0.0, 0.001, 0.002])
+
+            log_lines = Path(f"{output_prefix}.log").read_text(
+                encoding="utf-8"
+            ).splitlines()
+            logged_steps = []
+            for line in log_lines:
+                token = line.split(",", 1)[0]
+                try:
+                    logged_steps.append(int(token))
+                except ValueError:
+                    pass
+            self.assertEqual(logged_steps, [1, 2])
+
+            energy_data = read_edr(f"{output_prefix}.edr")
+            np.testing.assert_array_equal(energy_data.steps, [1, 2])
+            np.testing.assert_allclose(energy_data.times_ps, [0.001, 0.002])
+            self.assertFalse(Path(f"{output_prefix}.warming.xtc").exists())
+
+    def test_optional_warming_trajectory_writes_one_frame_per_kelvin(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            run_input = directory / "run.tpr"
+            output_prefix = directory / "run"
+
+            runtime = _runtime(
+                nsteps=0,
+                checkpoint_interval=0,
+                initial_temperature=298.0,
+                production_temperature=300.0,
+                warming_speed=1_000_000,
+                keep_warming_trajectory=True,
+            )
+            with run_input.open("wb") as handle:
+                pickle.dump(runtime, handle)
+
+            mdrun(
+                SimpleNamespace(
+                    run_input=str(run_input),
+                    output_prefix=str(output_prefix),
+                    checkpoint=None,
+                )
+            )
+
+            with XTCFile(
+                f"{output_prefix}.warming.xtc", "r"
+            ) as trajectory:
+                warming_steps = [frame.step for frame in trajectory]
+                warming_times = [frame.time for frame in trajectory]
+            self.assertEqual(warming_steps, [1, 2])
+            np.testing.assert_allclose(
+                warming_times,
+                [0.001, 0.002],
+            )
+
+            with XTCFile(f"{output_prefix}.xtc", "r") as trajectory:
+                production_steps = [frame.step for frame in trajectory]
+            self.assertEqual(production_steps, [0])
 
     def test_resume_runs_remaining_steps_and_rolls_back_newer_outputs(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -197,7 +304,40 @@ class MdrunResumeTests(unittest.TestCase):
             self.assertTrue(Path(f"{output_prefix}.part0002.edr").is_file())
             self.assertTrue(Path(f"{output_prefix}.part0002.pdb").is_file())
             self.assertTrue(Path(f"{output_prefix}.chk").is_file())
+            self.assertTrue(Path(f"{output_prefix}.state.xml").is_file())
+            self.assertTrue(Path(f"{output_prefix}.restart.json").is_file())
             self.assertFalse(Path(f"{output_prefix}.part0002.chk").exists())
+
+    def test_invalid_native_checkpoint_falls_back_to_portable_state(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            run_input = directory / "run.tpr"
+            output_prefix = directory / "run"
+
+            with run_input.open("wb") as handle:
+                pickle.dump(_runtime(nsteps=1, checkpoint_interval=0), handle)
+            mdrun(
+                SimpleNamespace(
+                    run_input=str(run_input),
+                    output_prefix=str(output_prefix),
+                    checkpoint=None,
+                )
+            )
+
+            Path(f"{output_prefix}.chk").write_bytes(b"not an OpenMM checkpoint")
+            with run_input.open("wb") as handle:
+                pickle.dump(_runtime(nsteps=2, checkpoint_interval=0), handle)
+            mdrun(
+                SimpleNamespace(
+                    run_input=str(run_input),
+                    output_prefix=str(output_prefix),
+                    checkpoint="auto",
+                )
+            )
+
+            with XTCFile(f"{output_prefix}.xtc", "r") as trajectory:
+                trajectory_steps = [frame.step for frame in trajectory]
+            self.assertEqual(trajectory_steps, [0, 1, 2])
 
     def test_nsteps_command_line_override_changes_production_target(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

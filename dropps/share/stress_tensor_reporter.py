@@ -17,6 +17,78 @@ from dropps.share.openmm_energy import (
 PRESSURE_COMPONENTS = ("Pxx", "Pyy", "Pzz", "Pxy", "Pxz", "Pyz")
 
 
+def synchronized_velocities(
+    masses_dalton,
+    velocities_nm_per_ps,
+    forces_kj_per_mol_nm,
+    timestep_ps,
+    *,
+    positions_nm=None,
+    box_vectors_nm=None,
+    constraints=(),
+):
+    """Convert leapfrog half-step velocities to the position time slice."""
+
+    masses = np.asarray(masses_dalton, dtype=float)
+    velocities = np.asarray(velocities_nm_per_ps, dtype=float)
+    forces = np.asarray(forces_kj_per_mol_nm, dtype=float)
+    if velocities.shape != (len(masses), 3) or forces.shape != velocities.shape:
+        raise ValueError("Velocity/force arrays do not match the particle masses.")
+    synchronized = velocities.copy()
+    movable = masses > 0.0
+    synchronized[movable] += (
+        0.5 * float(timestep_ps) * forces[movable] / masses[movable, None]
+    )
+
+    constraints = tuple(constraints)
+    if not constraints:
+        return synchronized
+    if positions_nm is None or box_vectors_nm is None:
+        raise ValueError(
+            "Positions and box vectors are required to synchronize constrained velocities."
+        )
+
+    positions = np.asarray(positions_nm, dtype=float)
+    box = np.asarray(box_vectors_nm, dtype=float)
+    inverse_box = np.linalg.inv(box)
+    inverse_masses = np.divide(
+        1.0, masses, out=np.zeros_like(masses), where=movable
+    )
+    constraint_vectors = []
+    for first, second in constraints:
+        displacement = positions[second] - positions[first]
+        fractional = displacement @ inverse_box
+        displacement -= np.round(fractional) @ box
+        inverse_mass_sum = inverse_masses[first] + inverse_masses[second]
+        denominator = float(np.dot(displacement, displacement)) * inverse_mass_sum
+        if denominator <= 0.0:
+            raise ValueError("Constraint connects particles with no movable mass.")
+        constraint_vectors.append(
+            (first, second, displacement, denominator)
+        )
+
+    # Sparse Gauss-Seidel/RATTLE velocity projection avoids allocating the
+    # dense constraint matrix, which would be prohibitive for long polymers.
+    tolerance = 1.0e-12
+    for _iteration in range(200):
+        maximum_violation = 0.0
+        for first, second, displacement, denominator in constraint_vectors:
+            violation = float(
+                np.dot(displacement, synchronized[second] - synchronized[first])
+            )
+            maximum_violation = max(maximum_violation, abs(violation))
+            multiplier = violation / denominator
+            synchronized[first] += (
+                multiplier * inverse_masses[first] * displacement
+            )
+            synchronized[second] -= (
+                multiplier * inverse_masses[second] * displacement
+            )
+        if maximum_violation <= tolerance:
+            return synchronized
+    raise ValueError("Constrained velocity synchronization did not converge.")
+
+
 def _require_orthorhombic_box(box_vectors_nm, tolerance=1.0e-8):
     box = np.asarray(box_vectors_nm, dtype=float)
     if box.shape != (3, 3):
@@ -164,7 +236,7 @@ class StressTensorReporter:
 
     def describeNextReport(self, simulation):
         steps = self._report_interval - simulation.currentStep % self._report_interval
-        return steps, True, True, False, False
+        return steps, True, True, True, False
 
     def _initialize(self, simulation):
         if simulation.system.getNumConstraints() > 0:
@@ -241,6 +313,15 @@ class StressTensorReporter:
         positions = state.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
         velocities = state.getVelocities(asNumpy=True).value_in_unit(
             unit.nanometer / unit.picosecond
+        )
+        forces = state.getForces(asNumpy=True).value_in_unit(
+            unit.kilojoule_per_mole / unit.nanometer
+        )
+        velocities = synchronized_velocities(
+            self._masses,
+            velocities,
+            forces,
+            simulation.integrator.getStepSize().value_in_unit(unit.picosecond),
         )
         box_vectors = state.getPeriodicBoxVectors(asNumpy=True).value_in_unit(
             unit.nanometer

@@ -28,13 +28,13 @@ def addangle(args):
         print("## An exception occurred when trying to open angle file %s." % args.angle_list)
         print(f"## Root cause: {exc}")
         quit()
-    
+
     residue_NTD = topology.atoms[0].residueid
     residue_CTD = topology.atoms[-1].residueid
 
     angle_list = [[int(line[0]), float(line[1]), float(line[2])] for line in angle_lines
                 if int(line[0]) not in [residue_NTD, residue_CTD]]
-    
+
 
     if residue_NTD in [int(angle[0]) for angle in angle_lines]:
         print(f"## WARNING: Angle centering at 1 will be ignored for it being a terminal.")
@@ -74,13 +74,13 @@ def getargs_addangle(argv):
 
     parser = ArgumentParser(prog=prog, description=desc)
 
-    parser.add_argument('-ip', '--input-topology', type=str, required=True, 
+    parser.add_argument('-p', '-ip', '--input-topology', type=str, required=True,
                         help="Input topology file (.itp).")
 
-    parser.add_argument('-op', '--output-topology', type=str, required=True, 
+    parser.add_argument('-op', '-ot', '--output-topology', type=str, required=True,
                         help="Output topology file (.itp) with angle restraints; the extension is added if omitted.")
 
-    parser.add_argument('-al', '--angle-list', type=str, required=True,
+    parser.add_argument('-a', '-al', '--angle-list', type=str, required=True,
                         help="Input text file with one 'BEAD_ID ANGLE_DEG FORCE_CONSTANT' record per line; bead IDs are 1-based.")
 
     args = parser.parse_args(argv)

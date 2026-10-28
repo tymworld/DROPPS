@@ -16,6 +16,7 @@ from dropps.share.stress_tensor_reporter import (
     configurational_pressure_tensor,
     kinetic_pressure_tensor,
     pressure_tensor,
+    synchronized_velocities,
 )
 from dropps.share.energy_reporter import EnergyReporter, read_edr
 from dropps.commands.mdrun import mdrun
@@ -41,6 +42,30 @@ def harmonic_bond_system():
 
 
 class StressTensorCoreTests(unittest.TestCase):
+    def test_half_step_velocity_is_synchronized_with_current_force(self):
+        masses = np.asarray([2.0, 4.0])
+        velocities = np.asarray([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+        forces = np.asarray([[4.0, 0.0, 0.0], [0.0, -8.0, 0.0]])
+        actual = synchronized_velocities(
+            masses, velocities, forces, timestep_ps=0.2
+        )
+        np.testing.assert_allclose(
+            actual,
+            [[1.2, 0.0, 0.0], [0.0, 0.8, 0.0]],
+        )
+
+    def test_synchronized_velocity_respects_distance_constraints(self):
+        actual = synchronized_velocities(
+            [1.0, 1.0],
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+            timestep_ps=0.1,
+            positions_nm=[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            box_vectors_nm=np.diag([4.0, 4.0, 4.0]),
+            constraints=((0, 1),),
+        )
+        np.testing.assert_allclose(actual[:, 0], [0.5, 0.5])
+
     def test_configurational_tensor_matches_harmonic_bond_virial(self):
         system, box = harmonic_bond_system()
         displacement = np.asarray([0.6, 0.8, 0.0])
@@ -108,7 +133,9 @@ class StressTensorReporterTests(unittest.TestCase):
         )
         context.setPositions(positions * unit.nanometer)
         context.setVelocities(velocities * unit.nanometer / unit.picosecond)
-        simulation = SimpleNamespace(system=system, currentStep=10)
+        simulation = SimpleNamespace(
+            system=system, currentStep=10, integrator=main_integrator
+        )
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             output = Path(temporary_directory) / "run.edr"
@@ -121,7 +148,10 @@ class StressTensorReporterTests(unittest.TestCase):
             )
             try:
                 state = context.getState(
-                    getPositions=True, getVelocities=True, getEnergy=True
+                    getPositions=True,
+                    getVelocities=True,
+                    getForces=True,
+                    getEnergy=True,
                 )
                 reporter.report(simulation, state)
             finally:
@@ -146,7 +176,9 @@ class StressTensorReporterTests(unittest.TestCase):
         )
         context.setPositions(positions * unit.nanometer)
         context.setVelocities(velocities * unit.nanometer / unit.picosecond)
-        simulation = SimpleNamespace(system=system, currentStep=10)
+        simulation = SimpleNamespace(
+            system=system, currentStep=10, integrator=main_integrator
+        )
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             output = Path(temporary_directory) / "run.stress.xvg"
@@ -158,7 +190,9 @@ class StressTensorReporterTests(unittest.TestCase):
                 platform="Reference",
             )
             try:
-                state = context.getState(getPositions=True, getVelocities=True)
+                state = context.getState(
+                    getPositions=True, getVelocities=True, getForces=True
+                )
                 reporter.report(simulation, state)
             finally:
                 reporter.close()

@@ -14,7 +14,7 @@
 # Full reference: docs/mdp-reference.md
 
 # 1. Integration and production length
-integrator = Langevin       # Currently the only supported integrator
+integrator = Langevin       # Uses explicit OpenMM Langevin-middle semantics
 dt         = 0.01           # Integration time step (ps)
 nsteps     = 100000         # Production steps; warming steps are additional
 friction   = 1.0            # Langevin friction coefficient (ps^-1)
@@ -28,7 +28,8 @@ max-step   = 100000         # Maximum minimization iterations
 production-temperature = 300  # Production temperature (K)
 gen-vel                = True # Generate Maxwell-Boltzmann velocities
 initial-temperature    = 150  # Velocity-generation/warming start temperature (K)
-warming-speed          = 1    # Heating rate when initial < production (K/ns)
+warming-speed          = 1.0  # Heating/cooling rate when temperatures differ (K/ns)
+keep-warming-trajectory = False # True writes <prefix>.warming.xtc per <=1 K stage
 
 # 3. Bonds and center-of-mass motion
 bondtype  = bond             # bond or constraint; pressure tensors require bond

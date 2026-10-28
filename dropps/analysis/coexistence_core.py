@@ -59,10 +59,8 @@ def center_periodic_fractions(fractions, center_fraction, target_fraction=0.5):
 def centering_schedule(frame_centers, frame_strengths, mode="frame", blocks=5):
     """Return the center applied to each frame for a requested centering mode.
 
-    In ``block`` mode, the first-harmonic vectors are averaged within contiguous
-    trajectory blocks.  Weighting their phases by ``frame_strengths`` exactly
-    reconstructs the circular center obtained by pooling reference particles
-    when the reference weights are constant across frames.
+    In ``block`` mode, circular centers are averaged within contiguous
+    trajectory blocks and weighted by their per-frame confidence strengths.
     """
 
     centers = np.asarray(frame_centers, dtype=float)

@@ -8,7 +8,9 @@ without importing runtime dependencies.
 
 from __future__ import annotations
 
+import argparse
 import ast
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -25,6 +27,18 @@ SECTION_MAP = {
     "commands_simulation": "Simulation",
     "commands_analysis": "Analysis",
 }
+
+CANONICAL_LONG_OPTION = re.compile(r"^--[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
+CANONICAL_SHORT_OPTION = re.compile(r"^-[a-z][a-z0-9]?$")
+
+
+def _is_documented_option(option: str) -> bool:
+    """Keep standard public aliases and omit compatibility-only spellings."""
+
+    return bool(
+        CANONICAL_SHORT_OPTION.fullmatch(option)
+        or CANONICAL_LONG_OPTION.fullmatch(option)
+    )
 
 
 @dataclass
@@ -45,6 +59,20 @@ def _parse_all_commands() -> dict[str, list[Path]]:
     tree = ast.parse(ALL_COMMANDS_FILE.read_text(encoding="utf-8"), filename=str(ALL_COMMANDS_FILE))
     result: dict[str, list[Path]] = {k: [] for k in SECTION_MAP}
 
+    imported_commands: dict[str, Path] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.ImportFrom) or not node.module:
+            continue
+        chunks = node.module.split(".")
+        if len(chunks) != 3 or chunks[:2] not in (
+            ["dropps", "commands"],
+            ["dropps", "analysis"],
+        ):
+            continue
+        module_file = REPO_ROOT.joinpath(*chunks).with_suffix(".py")
+        for alias in node.names:
+            imported_commands[alias.asname or alias.name] = module_file
+
     for node in tree.body:
         if not isinstance(node, ast.Assign):
             continue
@@ -59,7 +87,12 @@ def _parse_all_commands() -> dict[str, list[Path]]:
             continue
 
         for elt in node.value.elts:
-            # Expect: dropps.commands.module.symbol or dropps.analysis.module.symbol
+            if isinstance(elt, ast.Name) and elt.id in imported_commands:
+                result[section_name].append(imported_commands[elt.id])
+                continue
+
+            # Backwards compatibility with the original registry layout:
+            # dropps.commands.module.symbol or dropps.analysis.module.symbol.
             if not isinstance(elt, ast.Attribute):
                 continue
             path_chunks: list[str] = []
@@ -133,11 +166,23 @@ def _extract_parser_required_args(
         options: list[str] = []
         for arg in node.args:
             text = _get_str_constant(arg)
-            if text is not None and text.startswith("-"):
+            if (
+                text is not None
+                and text.startswith("-")
+                and _is_documented_option(text)
+            ):
                 options.append(text)
 
         if len(options) == 0:
             continue
+
+        short_options = [
+            option for option in options if CANONICAL_SHORT_OPTION.fullmatch(option)
+        ]
+        long_options = [
+            option for option in options if CANONICAL_LONG_OPTION.fullmatch(option)
+        ]
+        options = [*short_options[:1], *long_options]
 
         required = False
         exclusive_group = None
@@ -277,9 +322,16 @@ def _format_required_args(required_args: list[ArgInfo]) -> str:
 
 
 def _render_commands_section(section_modules: dict[str, list[Path]]) -> str:
+    help_tree = ast.parse((REPO_ROOT / "dropps/share/command_help.py").read_text(encoding="utf-8"))
+    examples = next(
+        ast.literal_eval(node.value)
+        for node in help_tree.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "COMMAND_EXAMPLES" for target in node.targets)
+    )
     lines: list[str] = []
     lines.append(BEGIN_MARKER)
-    lines.append("_This section is auto-generated from source. Do not edit manually._")
+    lines.append("Every public command is listed below with a minimal example and a link to its complete options, defaults, units, and workflow notes. See the [complete command reference](docs/command-reference.md) for task-based navigation.")
     lines.append("")
 
     for section_key, title in SECTION_MAP.items():
@@ -288,10 +340,11 @@ def _render_commands_section(section_modules: dict[str, list[Path]]) -> str:
 
         for module_file in section_modules.get(section_key, []):
             info = _parse_module_info(module_file)
-            if info.name == "help":
-                continue
             lines.append(f"- `{info.name}`: {info.desc}")
             lines.append(f"  Required args: {_format_required_args(info.required_args)}")
+            lines.append(f"  [Full reference](docs/commands/{info.name}.md).")
+            example = "dps help commands" if info.name == "help" else examples[info.name][0]
+            lines.extend(["", "  ```bash", "  " + example, "  ```", ""])
 
         lines.append("")
 
@@ -318,12 +371,38 @@ def _update_readme(rendered_section: str) -> None:
     README_FILE.write_text(new_text, encoding="utf-8")
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Fail if the generated command catalog differs from README.",
+    )
+    args = parser.parse_args(argv)
+
     section_modules = _parse_all_commands()
     rendered = _render_commands_section(section_modules)
+    if args.check:
+        text = README_FILE.read_text(encoding="utf-8")
+        if BEGIN_MARKER not in text or END_MARKER not in text:
+            print("README command catalog markers are missing.")
+            return 1
+        start = text.index(BEGIN_MARKER)
+        end = text.index(END_MARKER) + len(END_MARKER)
+        current = text[start:end].rstrip() + "\n"
+        if current != rendered:
+            print(
+                "README command catalog is stale; run "
+                "'python scripts/update_readme_commands.py'."
+            )
+            return 1
+        print("README command catalog is current.")
+        return 0
+
     _update_readme(rendered)
     print(f"Updated {README_FILE}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

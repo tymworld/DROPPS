@@ -213,7 +213,7 @@ def getargs_viscosity_gk(argv):
     parser.add_argument("-o", "--output", required=True,
                         help="Output Green-Kubo viscosity time series (.xvg); the extension is added if omitted.")
     parser.add_argument(
-        "-T",
+        "-tm",
         "--temperature",
         type=float,
         help="Temperature, in K; if omitted, use the value stored in the stress file.",

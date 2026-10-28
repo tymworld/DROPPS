@@ -5,6 +5,8 @@ separate from trajectory I/O makes it possible to check it against the legacy
 implementation without loading a trajectory.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 import numpy as np

@@ -44,7 +44,15 @@ def find_new_atom_position(coordinates, bond_length, number, n_samples=5000):
 
     # Convert to numpy array in consistent unit (e.g., nanometers)
     #coord_unit = coordinates.unit
-    coords = np.array(coordinates)
+    coords = np.asarray(coordinates, dtype=float)
+    if coords.ndim != 2 or coords.shape[1] != 3 or coords.shape[0] == 0:
+        raise ValueError("coordinates must have shape (N, 3) with N > 0")
+    if number < 1 or number > coords.shape[0]:
+        raise ValueError("reference atom number is outside the coordinate array")
+    if n_samples <= 0:
+        raise ValueError("n_samples must be positive")
+    if not np.isfinite(bond_length) or bond_length <= 0.0:
+        raise ValueError("bond_length must be a positive finite number")
     r0 = coords[number - 1]
 
     # Random directions uniformly distributed on the sphere
@@ -60,16 +68,19 @@ def find_new_atom_position(coordinates, bond_length, number, n_samples=5000):
     # Candidate points at fixed bond length
     r_candidates = r0 + bond_length * directions
 
-    # Compute minimum distance to all existing atoms for each candidate
-    min_distances = np.min(
-        np.linalg.norm(r_candidates[:, None, :] - coords[None, :, :], axis=-1),
-        axis=1
-    )
-
-    # Exclude the reference atom from penalty (since it's bonded)
-    d_to_ref = np.linalg.norm(r_candidates - r0, axis=1)
-    mask = np.abs(d_to_ref - bond_length) < 1e-6
-    min_distances[~mask] = -np.inf
+    # The bonded reference atom is deliberately excluded: every candidate is
+    # equally far from it, and including it hides steric differences.
+    other_coordinates = np.delete(coords, number - 1, axis=0)
+    if other_coordinates.size:
+        min_distances = np.min(
+            np.linalg.norm(
+                r_candidates[:, None, :] - other_coordinates[None, :, :],
+                axis=-1,
+            ),
+            axis=1,
+        )
+    else:
+        min_distances = np.zeros(n_samples, dtype=float)
 
     # Pick the candidate with the largest minimum distance to other atoms
     best_idx = np.argmax(min_distances)
@@ -81,18 +92,18 @@ def getargs_modifyres(argv):
 
     parser = ArgumentParser(prog=prog, description=desc)
 
-    parser.add_argument('-ip', '--input-topology', type=str, required=True, 
+    parser.add_argument('-p', '-ip', '--input-topology', type=str, required=True,
                         help="Input topology file (.itp).")
-    
-    parser.add_argument('-if', '--input-structure', type=str, required=True, 
+
+    parser.add_argument('-f', '-if', '--input-structure', type=str, required=True,
                         help="Input structure file (.pdb).")
 
-    parser.add_argument('-op', '--output-topology', type=str, required=True, 
+    parser.add_argument('-op', '-ot', '--output-topology', type=str, required=True,
                         help="Output modified topology file (.itp); the extension is added if omitted.")
 
-    parser.add_argument('-of', '--output-structure', type=str, required=True, 
+    parser.add_argument('-o', '-of', '--output-structure', type=str, required=True,
                         help="Output modified structure file (.pdb); the extension is added if omitted.")
-    
+
     parser.add_argument('-ff', '--forcefield', choices=forcefield_list,
                         help="Force field to use; if omitted, prompt interactively.")
 
@@ -183,14 +194,20 @@ def modifyres(args):
     print("## Input structure has been readed and loaded to memory.")
     print(f"################################################################################")
     print(f"## WARNING: This program can only be runned on unmodified protein topologies. ##")
-    print(f"################################################################################")  
+    print(f"################################################################################")
 
     # We now process and check the modification list
     modifications = []
     for modification in args.modifications:
         try:
-            original, number, modified = re.match(r"([A-Za-z]+)(\d+)([A-Za-z]+)", modification).groups()
+            match = re.fullmatch(r"([A-Za-z]+)(\d+)([A-Za-z]+)", modification)
+            if match is None:
+                raise ValueError("expected ORIGINAL+NUMBER+MODIFIED")
+            original, number, modified = match.groups()
             number = int(number)
+
+            if number < 1 or number > len(topology_raw.atoms):
+                raise ValueError("residue number is outside the input topology")
 
             if number == 1 or number == len(topology_raw.atoms):
                 print(f"ERROR: Currently, cannot add modification to terminal residue.")
@@ -200,15 +217,15 @@ def modifyres(args):
             if not original in forcefield.abbr:
                 print(f"ERROR: Residue {original} not recognized in forcefield.")
                 quit()
-            
+
             if not modified in forcefield.modifications.keys():
                 print(f"ERROR: Modified residue {modified} not recognized in forcefield.")
                 quit()
-            
+
             if topology_raw.atoms[number - 1].abbr != original:
                 print(f"ERROR: Residue {number} in input topology is {topology_raw.atoms[number - 1]} instead of {original}")
                 quit()
-            
+
             modifications.append([original, number, modified])
 
         except Exception as exc:
@@ -237,11 +254,11 @@ def modifyres(args):
             quit()
 
         print(f"## Will add atom type {abbr_m}, name: {name_m}, sigma: {sigma_m}, lambda: {lambda_m}, T0/1/2: {T0_m}/{T1_m}/{T2_m}")
-        
+
         topology_new.atomtypes.append(Atomtype_AH_DH(abbr_m, name_m, sigma_m, lambda_m,
                                                T0_m, T1_m, T2_m))
         topology_new.typelist.append(abbr_m)
-    
+
     # We next generate sidechain modifications
     for modified_type in modified_types:
 
@@ -256,13 +273,13 @@ def modifyres(args):
         if len(abbr_m) > 4:
             print("ERROR: Atom abbr raw length cannot exceed 3.")
             quit()
-        
+
         print(f"## Will add atom type {abbr_m}, name: {name_m}, sigma: {sigma_m}, lambda: {lambda_m}, T0/1/2: {T0_m}/{T1_m}/{T2_m}")
-        
+
         topology_new.atomtypes.append(Atomtype_AH_DH(abbr_m, name_m, sigma_m, lambda_m,
                                                T0_m, T1_m, T2_m))
         topology_new.typelist.append(abbr_m)
-    
+
     # We now start modification.
 
     atom_number_now = len(topology_raw.atoms)
@@ -273,7 +290,7 @@ def modifyres(args):
         [ff_original, ff_abbr, ff_aa, ff_sigmas, ff_lambdas, ff_masses,\
           ff_charges, ff_bond_length, ff_bond_k, ff_angle_thetas, ff_angle_ks]\
           = forcefield.modifications[modified]
-        
+
         original_index = number
         original_left_index = original_index - 1
         original_right_index = original_index + 1
@@ -286,17 +303,17 @@ def modifyres(args):
             print(f"ERROR: Atom index {original_index} of the protein is not {original}")
             quit()
 
-        # Add atoms        
+        # Add atoms
         topology_new.atoms[original_index - 1] = Atom(ff_abbr + 'B', ff_aa + "_BB",
                                                       ff_aa, topology_raw.atoms[original_index - 1].residueid,
                                                       ff_masses[0], ff_charges[0])
-        
+
         print(f"## Modified original atom {topology_raw.atoms[original_index - 1].abbr}{original_index} to {topology_new.atoms[original_index - 1].abbr}")
 
         topology_new.atoms.append(Atom(ff_abbr + 'S', ff_aa + "SC",
                                        ff_aa, topology_raw.atoms[original_index - 1].residueid,
                                        ff_masses[1], ff_charges[1]))
-        
+
         # Double check
         if not len(topology_new.atoms) == new_index:
             print(f"ERROR: Length of new topology is not correct. Please check code.")
@@ -305,7 +322,7 @@ def modifyres(args):
         print(f"## Added new atom {new_index} {topology_new.atoms[new_index - 1].abbr}")
 
         # Add bonds
-        topology_new.bonds.append(Bond(original_index - 1, new_index - 1, 
+        topology_new.bonds.append(Bond(original_index - 1, new_index - 1,
                                        ff_bond_length * nanometer, ff_bond_k * kilojoule_per_mole / nanometer ** 2))
         print(f"## Add bond from {original_index} to {new_index}.")
 
@@ -313,19 +330,19 @@ def modifyres(args):
         if topology_new.angles is None:
             topology_new.angles = list()
         topology_new.angles.append(Angle(original_left_index - 1, original_index - 1, new_index - 1,
-                                         ff_angle_thetas[0] * degree, 
+                                         ff_angle_thetas[0] * degree,
                                          ff_angle_ks[0] * kilojoule_per_mole / radian ** 2))
         print(f"## Add angle {original_left_index}-{original_index}-{new_index}, theta={ff_angle_thetas[0]}, k={ff_angle_ks[0]}")
         topology_new.angles.append(Angle(original_right_index - 1, original_index - 1, new_index - 1,
                                          ff_angle_thetas[1] * degree,
                                            ff_angle_ks[1] * kilojoule_per_mole / radian ** 2))
         print(f"## Add angle {original_right_index}-{original_index}-{new_index}, theta={ff_angle_thetas[1]}, k={ff_angle_ks[1]}")
-        
+
     # We now write output itp file.
 
     write_itp(output_itp_name, topology_new)
 
-    print(f"## Modified itp written to file {output_itp_name}") 
+    print(f"## Modified itp written to file {output_itp_name}")
 
     # We now generate coordinates for new atom and treat structure file
     #structure_raw, box
@@ -333,15 +350,15 @@ def modifyres(args):
     structure_new = deepcopy(structure_raw)
 
     coordinates = [[atom['x'], atom['y'], atom['z']] for atom in structure_raw]
-    coordinates_in_nanometer = [[atom['x'].value_in_unit(nanometer), 
-                                 atom['y'].value_in_unit(nanometer), 
-                                 atom['z'].value_in_unit(nanometer)] 
+    coordinates_in_nanometer = [[atom['x'].value_in_unit(nanometer),
+                                 atom['y'].value_in_unit(nanometer),
+                                 atom['z'].value_in_unit(nanometer)]
                                  for atom in structure_raw]
     # Double check
     if not len(coordinates) == len(topology_raw.atoms):
         print(f"ERROR: Length of topology and structure file not match.")
         quit()
-    
+
     for [original, number, modified] in modifications:
         original_coordinate = coordinates[number - 1]
         bond_length_nanometer = forcefield.modifications[modified][7]
@@ -355,7 +372,7 @@ def modifyres(args):
         print(f"## New atom {modified}S will be placed around {original}{number} "
               + f"({original_coordinate[0]}, {original_coordinate[1]}, {original_coordinate[2]}), "
               + f"at ({new_coordinate[0]}, {new_coordinate[1]}, {new_coordinate[2]})")
-        
+
         structure_new[number - 1]["name"] = ff_abbr + "B"
 
         structure_new.append({
@@ -371,22 +388,22 @@ def modifyres(args):
                     "bfactor": structure_new[number - 1]["bfactor"],
                     "element": structure_new[number - 1]["element"],
                 })
-        
+
         coordinates.append(new_coordinate)
         coordinates_in_nanometer.append([new_coordinate[0].value_in_unit(nanometer),
                                          new_coordinate[1].value_in_unit(nanometer),
                                          new_coordinate[2].value_in_unit(nanometer)])
-    
+
     new_pdb_data = phrase_pdb_atoms(structure_new, box)
     write_pdb(output_pdb_name, new_pdb_data.box_size, new_pdb_data.record_names,
               new_pdb_data.serial_numbers, new_pdb_data.atom_names, new_pdb_data.residue_names,
               new_pdb_data.chain_IDs, new_pdb_data.residue_sequence_numbers, new_pdb_data.x_nms,
               new_pdb_data.y_nms, new_pdb_data.z_nms, new_pdb_data.occupancys,
               new_pdb_data.bfactors, new_pdb_data.elements, new_pdb_data.molecule_length_list)
-    
 
-    print(f"## Modified pdb written to file {output_pdb_name}") 
-    
+
+    print(f"## Modified pdb written to file {output_pdb_name}")
+
 
 
 

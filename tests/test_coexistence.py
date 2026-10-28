@@ -11,6 +11,7 @@ import openmm.app
 from openmm import unit
 
 from dropps.analysis.coexistence import getargs_coexistence, coexistence
+from dropps.analysis.density import density, getargs_density
 
 
 class CoexistenceCommandTests(unittest.TestCase):
@@ -120,7 +121,7 @@ class CoexistenceCommandTests(unittest.TestCase):
                     "-ref",
                     "0",
                     "-tp",
-                    "number",
+                    "mass",
                     "--bin-width",
                     "0.5",
                     "--blocks",
@@ -151,6 +152,48 @@ class CoexistenceCommandTests(unittest.TestCase):
             self.assertEqual(rows[0]["group"], "group0")
             self.assertGreater(float(rows[0]["dense_to_dilute_ratio"]), 4.0)
             self.assertGreater(float(rows[0]["dense_mean"]), float(rows[0]["dilute_mean"]))
+
+            density_output_path = directory / "density.xvg"
+            density_args = getargs_density(
+                [
+                    "-s",
+                    str(tpr_path),
+                    "-f",
+                    str(xtc_path),
+                    "-o",
+                    str(density_output_path),
+                    "-selfit",
+                    "0",
+                    "-sel",
+                    "0",
+                    "-tp",
+                    "mass",
+                    "--bin-width",
+                    "0.5",
+                ]
+            )
+            density(density_args)
+            coexistence_data = np.loadtxt(data_lines)
+            density_lines = [
+                line
+                for line in density_output_path.read_text(
+                    encoding="utf-8"
+                ).splitlines()
+                if line and not line.startswith(("#", "@"))
+            ]
+            density_data = np.loadtxt(density_lines)
+            np.testing.assert_allclose(
+                density_data[:, 1],
+                coexistence_data[:, 1],
+                rtol=0.0,
+                atol=1.0e-5,
+            )
+            np.testing.assert_allclose(
+                density_data[:, 0] - box_lengths[2] / 2.0,
+                coexistence_data[:, 0],
+                rtol=0.0,
+                atol=1.0e-5,
+            )
 
             block_output_path = directory / "coexistence_block.xvg"
             block_args = getargs_coexistence(
